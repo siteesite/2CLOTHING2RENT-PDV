@@ -3,21 +3,25 @@ export interface Product {
   handle: string
   name: string
   description_html: string | null
-  vendor: string | null
   brand: string | null
   category: string | null
-  subcategory: string | null
   status: string | null
+  sku: string | null
   price: number | null
   compare_at_price: number | null
-  images: any
+  cost_per_item: number | null
+  stock_qty: number | null
+  barcode: string | null
+  image_url: string | null
+  extra_images: string[] | null
+  seo_title: string | null
+  seo_description: string | null
+  size: string | null
+  color: string | null
   tags: string[] | null
-  sizes: any
-  rental_periods: any
-  principal_image_url: string | null
+  metafields: any
   created_at: string
   updated_at: string
-  synced_at: string | null
   internal_code?: string
   operational_status?: string
 }

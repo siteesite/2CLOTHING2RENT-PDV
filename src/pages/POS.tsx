@@ -218,8 +218,8 @@ export function POS() {
                     onClick={() => addToCart(p)}
                     className="w-full text-left px-4 py-3 hover:bg-gray-50 border-b border-gray-100 last:border-0 flex items-center gap-3"
                   >
-                    {p.principal_image_url ? (
-                      <img src={p.principal_image_url} alt={p.name} className="w-10 h-10 rounded object-cover" />
+                    {p.image_url ? (
+                      <img src={p.image_url} alt={p.name} className="w-10 h-10 rounded object-cover" />
                     ) : (
                       <div className="w-10 h-10 rounded bg-gray-100 flex items-center justify-center text-lg">👗</div>
                     )}
