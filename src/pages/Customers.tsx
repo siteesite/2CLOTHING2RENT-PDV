@@ -2,6 +2,14 @@ import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import type { Customer } from '../types'
 
+interface CustomerOrder {
+  order_name: string
+  financial_status: string
+  total_price: number
+  line_items: any[]
+  created_at: string
+}
+
 export function Customers() {
   const [customers, setCustomers] = useState<Customer[]>([])
   const [loading, setLoading] = useState(true)
@@ -9,6 +17,8 @@ export function Customers() {
   const [showModal, setShowModal] = useState(false)
   const [showDetailModal, setShowDetailModal] = useState<Customer | null>(null)
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null)
+  const [customerOrders, setCustomerOrders] = useState<CustomerOrder[]>([])
+  const [loadingOrders, setLoadingOrders] = useState(false)
   const [form, setForm] = useState({
     first_name: '',
     last_name: '',
@@ -68,6 +78,24 @@ export function Customers() {
     setShowModal(true)
   }
 
+  async function openDetail(customer: Customer) {
+    setShowDetailModal(customer)
+    setLoadingOrders(true)
+    try {
+      const { data } = await supabase
+        .from('orders')
+        .select('order_name, financial_status, total_price, line_items, created_at')
+        .eq('email', customer.email)
+        .order('created_at', { ascending: false })
+        .limit(10)
+      setCustomerOrders(data || [])
+    } catch (error) {
+      setCustomerOrders([])
+    } finally {
+      setLoadingOrders(false)
+    }
+  }
+
   async function handleSave() {
     try {
       if (editingCustomer) {
@@ -106,6 +134,20 @@ export function Customers() {
     }
   }
 
+  const statusColors: Record<string, string> = {
+    paid: 'bg-green-100 text-green-700',
+    pending: 'bg-yellow-100 text-yellow-700',
+    refunded: 'bg-gray-100 text-gray-700',
+    voided: 'bg-red-100 text-red-700',
+  }
+
+  const statusLabels: Record<string, string> = {
+    paid: 'Pago',
+    pending: 'Pendente',
+    refunded: 'Estornado',
+    voided: 'Cancelado',
+  }
+
   if (loading) {
     return <div className="flex items-center justify-center h-64"><div className="text-gray-400">Carregando clientes...</div></div>
   }
@@ -140,59 +182,69 @@ export function Customers() {
                 <th className="text-left px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Nome</th>
                 <th className="text-left px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">E-mail</th>
                 <th className="text-left px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Telefone</th>
-                <th className="text-left px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">CPF</th>
+                <th className="text-left px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Cidade/UF</th>
                 <th className="text-left px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Pedidos</th>
                 <th className="text-left px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Total Gasto</th>
                 <th className="text-center px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Ações</th>
               </tr>
             </thead>
             <tbody>
-              {filtered.map((customer) => (
-                <tr key={customer.id} className="border-b border-gray-50 hover:bg-gray-50 transition-colors">
-                  <td className="px-6 py-4">
-                    <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-full bg-[var(--color-primary)] text-white flex items-center justify-center text-xs font-medium">
-                        {customer.first_name?.[0]?.toUpperCase() || '?'}
+              {filtered.map((customer) => {
+                const addr = customer.default_address
+                const cityUf = addr?.city && addr?.province_code ? `${addr.city}/${addr.province_code}` : addr?.city || ''
+
+                return (
+                  <tr key={customer.id} className="border-b border-gray-50 hover:bg-gray-50 transition-colors">
+                    <td className="px-6 py-4">
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-full bg-[var(--color-primary)] text-white flex items-center justify-center text-xs font-medium">
+                          {customer.first_name?.[0]?.toUpperCase() || '?'}
+                        </div>
+                        <div>
+                          <span className="font-medium text-sm text-[var(--color-primary)] block">
+                            {customer.first_name} {customer.last_name}
+                          </span>
+                          {(customer as any).cpf && (
+                            <span className="text-xs text-gray-400">CPF: {(customer as any).cpf}</span>
+                          )}
+                        </div>
                       </div>
-                      <span className="font-medium text-sm text-[var(--color-primary)]">
-                        {customer.first_name} {customer.last_name}
-                      </span>
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 text-sm text-gray-500">{customer.email || '—'}</td>
-                  <td className="px-6 py-4 text-sm text-gray-500">{customer.phone || '—'}</td>
-                  <td className="px-6 py-4 text-sm text-gray-500">{(customer as any).cpf || '—'}</td>
-                  <td className="px-6 py-4 text-sm text-gray-500">{customer.total_orders || 0}</td>
-                  <td className="px-6 py-4 text-sm font-medium text-[var(--color-primary)]">
-                    {customer.total_spent
-                      ? new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(customer.total_spent)
-                      : '—'}
-                  </td>
-                  <td className="px-6 py-4">
-                    <div className="flex items-center justify-center gap-1">
-                      <button
-                        onClick={() => setShowDetailModal(customer)}
-                        className="p-2 rounded-lg hover:bg-blue-50 text-blue-400 hover:text-blue-600 transition-colors"
-                        title="Ver detalhes"
-                      >
-                        <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                        </svg>
-                      </button>
-                      <button
-                        onClick={() => openEdit(customer)}
-                        className="p-2 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors"
-                        title="Editar"
-                      >
-                        <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                        </svg>
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
+                    </td>
+                    <td className="px-6 py-4 text-sm text-gray-500">{customer.email || '—'}</td>
+                    <td className="px-6 py-4 text-sm text-gray-500">{customer.phone || '—'}</td>
+                    <td className="px-6 py-4 text-sm text-gray-500">{cityUf || '—'}</td>
+                    <td className="px-6 py-4 text-sm text-gray-500">{customer.total_orders || 0}</td>
+                    <td className="px-6 py-4 text-sm font-medium text-[var(--color-primary)]">
+                      {customer.total_spent
+                        ? new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(customer.total_spent)
+                        : '—'}
+                    </td>
+                    <td className="px-6 py-4">
+                      <div className="flex items-center justify-center gap-1">
+                        <button
+                          onClick={() => openDetail(customer)}
+                          className="p-2 rounded-lg hover:bg-blue-50 text-blue-400 hover:text-blue-600 transition-colors"
+                          title="Ver detalhes"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                          </svg>
+                        </button>
+                        <button
+                          onClick={() => openEdit(customer)}
+                          className="p-2 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors"
+                          title="Editar"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                          </svg>
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                )
+              })}
             </tbody>
           </table>
         </div>
@@ -266,7 +318,7 @@ export function Customers() {
 
       {showDetailModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+          <div className="bg-white rounded-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
             <div className="p-6">
               <div className="flex items-center justify-between mb-6">
                 <h3 className="text-lg font-semibold text-[var(--color-primary)]">Detalhes do Cliente</h3>
@@ -288,43 +340,105 @@ export function Customers() {
                   {showDetailModal.email && (
                     <p className="text-sm text-gray-500">{showDetailModal.email}</p>
                   )}
+                  {showDetailModal.phone && (
+                    <p className="text-sm text-gray-500">{showDetailModal.phone}</p>
+                  )}
                 </div>
               </div>
 
-              <div className="space-y-1">
-                <DetailRow label="E-mail" value={showDetailModal.email} />
-                <DetailRow label="Telefone" value={showDetailModal.phone} />
-                <DetailRow label="CPF" value={(showDetailModal as any).cpf} />
-                <DetailRow label="Pedidos" value={showDetailModal.total_orders?.toString()} />
-                <DetailRow
-                  label="Total Gasto"
-                  value={showDetailModal.total_spent
-                    ? new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(showDetailModal.total_spent)
-                    : undefined}
-                />
-                <DetailRow label="Marketing E-mail" value={showDetailModal.accepts_email_marketing ? 'Sim' : 'Não'} />
-                <DetailRow label="Marketing SMS" value={showDetailModal.accepts_sms_marketing ? 'Sim' : 'Não'} />
-                <DetailRow label="Observações" value={showDetailModal.note} />
-                {showDetailModal.tags && (
-                  <DetailRow label="Tags" value={Array.isArray(showDetailModal.tags) ? showDetailModal.tags.join(', ') : showDetailModal.tags} />
-                )}
-                {showDetailModal.default_address && (
-                  <DetailRow
-                    label="Endereço"
-                    value={[
-                      showDetailModal.default_address.address1,
-                      showDetailModal.default_address.address2,
-                      showDetailModal.default_address.city,
-                      showDetailModal.default_address.province_code,
-                      showDetailModal.default_address.zip,
-                    ].filter(Boolean).join(', ') || undefined}
-                  />
-                )}
-                <DetailRow label="Criado em" value={new Date(showDetailModal.created_at).toLocaleDateString('pt-BR')} />
-                <DetailRow label="Atualizado em" value={new Date(showDetailModal.updated_at).toLocaleDateString('pt-BR')} />
+              <div className="grid grid-cols-2 gap-6 mb-6">
+                <div>
+                  <h4 className="text-sm font-semibold text-[var(--color-primary)] mb-3">Informações Pessoais</h4>
+                  <div className="space-y-1">
+                    <DetailRow label="E-mail" value={showDetailModal.email} />
+                    <DetailRow label="Telefone" value={showDetailModal.phone} />
+                    <DetailRow label="CPF" value={(showDetailModal as any).cpf} />
+                    <DetailRow label="Customer ID" value={showDetailModal.customer_id} />
+                  </div>
+                </div>
+                <div>
+                  <h4 className="text-sm font-semibold text-[var(--color-primary)] mb-3">Endereço</h4>
+                  <div className="space-y-1">
+                    <DetailRow label="Rua" value={showDetailModal.default_address?.address1} />
+                    <DetailRow label="Complemento" value={showDetailModal.default_address?.address2} />
+                    <DetailRow label="Cidade" value={showDetailModal.default_address?.city} />
+                    <DetailRow label="UF" value={showDetailModal.default_address?.province_code} />
+                    <DetailRow label="CEP" value={showDetailModal.default_address?.zip} />
+                  </div>
+                </div>
               </div>
 
-              <div className="flex gap-3 mt-6">
+              <div className="grid grid-cols-3 gap-4 mb-6">
+                <div className="bg-gray-50 rounded-lg p-4 text-center">
+                  <p className="text-2xl font-bold text-[var(--color-primary)]">{showDetailModal.total_orders || 0}</p>
+                  <p className="text-xs text-gray-500">Pedidos</p>
+                </div>
+                <div className="bg-gray-50 rounded-lg p-4 text-center">
+                  <p className="text-2xl font-bold text-[var(--color-success)]">
+                    {showDetailModal.total_spent
+                      ? new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(showDetailModal.total_spent)
+                      : 'R$ 0'}
+                  </p>
+                  <p className="text-xs text-gray-500">Total Gasto</p>
+                </div>
+                <div className="bg-gray-50 rounded-lg p-4 text-center">
+                  <p className="text-sm font-medium text-[var(--color-primary)]">
+                    {showDetailModal.accepts_email_marketing ? '✅ Sim' : '❌ Não'}
+                  </p>
+                  <p className="text-xs text-gray-500">Marketing</p>
+                </div>
+              </div>
+
+              {showDetailModal.tags && (
+                <div className="mb-6">
+                  <h4 className="text-sm font-semibold text-[var(--color-primary)] mb-2">Tags</h4>
+                  <div className="flex flex-wrap gap-2">
+                    {(Array.isArray(showDetailModal.tags) ? showDetailModal.tags : (showDetailModal.tags as string || '').split(',')).map((tag: string, i: number) => (
+                      <span key={i} className="text-xs bg-gray-100 text-gray-600 px-2 py-1 rounded-full">{tag.trim()}</span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {showDetailModal.note && (
+                <div className="mb-6">
+                  <h4 className="text-sm font-semibold text-[var(--color-primary)] mb-2">Observações</h4>
+                  <p className="text-sm text-gray-600 bg-gray-50 p-3 rounded-lg">{showDetailModal.note}</p>
+                </div>
+              )}
+
+              <div className="mb-6">
+                <h4 className="text-sm font-semibold text-[var(--color-primary)] mb-3">Histórico de Pedidos</h4>
+                {loadingOrders ? (
+                  <p className="text-sm text-gray-400">Carregando pedidos...</p>
+                ) : customerOrders.length > 0 ? (
+                  <div className="space-y-2">
+                    {customerOrders.map((order, i) => (
+                      <div key={i} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                        <div>
+                          <p className="text-sm font-medium text-[var(--color-primary)]">{order.order_name}</p>
+                          <p className="text-xs text-gray-500">
+                            {order.line_items?.map((item: any) => item.name).join(', ')}
+                          </p>
+                          <p className="text-xs text-gray-400">{new Date(order.created_at).toLocaleDateString('pt-BR')}</p>
+                        </div>
+                        <div className="text-right">
+                          <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${statusColors[order.financial_status] || 'bg-gray-100'}`}>
+                            {statusLabels[order.financial_status] || order.financial_status}
+                          </span>
+                          <p className="text-sm font-bold text-[var(--color-primary)] mt-1">
+                            {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(order.total_price)}
+                          </p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-sm text-gray-400">Nenhum pedido encontrado.</p>
+                )}
+              </div>
+
+              <div className="flex gap-3">
                 <button onClick={() => setShowDetailModal(null)} className="flex-1 py-2.5 border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50">Fechar</button>
                 <button
                   onClick={() => { setShowDetailModal(null); openEdit(showDetailModal) }}
@@ -343,9 +457,9 @@ export function Customers() {
 
 function DetailRow({ label, value }: { label: string; value?: string | null }) {
   return (
-    <div className="flex justify-between py-2.5 border-b border-gray-100">
-      <span className="text-sm text-gray-500">{label}</span>
-      <span className="text-sm font-medium text-[var(--color-primary)] text-right max-w-[60%]">{value || '—'}</span>
+    <div className="flex justify-between py-1.5">
+      <span className="text-xs text-gray-500">{label}</span>
+      <span className="text-xs font-medium text-[var(--color-primary)] text-right">{value || '—'}</span>
     </div>
   )
 }
