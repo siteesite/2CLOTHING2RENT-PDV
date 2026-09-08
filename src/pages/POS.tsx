@@ -258,7 +258,7 @@ export function POS() {
       alert('Este produto não está disponível no período selecionado. Verifique o calendário.')
       return
     }
-    const existing = cart.find((item) => item.product.id === selectedProduct.id && item.size === selectedSize)
+    const existing = cart.find((item) => item.product.id === selectedProduct.id)
     if (existing) {
       alert('Este produto já está no carrinho.')
       return
@@ -685,25 +685,53 @@ export function POS() {
 
           {cart.length > 0 && (
             <div className="border-t border-gray-100 pt-4">
-              <h4 className="text-xs font-semibold text-gray-500 mb-3 uppercase tracking-wide">Carrinho</h4>
-              <div className="space-y-2 mb-4">
-                {cart.map((item, index) => (
-                  <div key={index} className="flex items-center gap-3 bg-gray-50 rounded-lg p-2.5">
-                    {item.product.image_url ? (
-                      <img src={item.product.image_url} alt="" className="w-8 h-10 rounded object-cover" />
-                    ) : (
-                      <div className="w-8 h-10 rounded bg-gray-200 flex items-center justify-center text-xs">👗</div>
-                    )}
-                    <div className="flex-1 min-w-0">
-                      <p className="text-xs font-medium text-[var(--color-primary)] truncate">{item.product.name}</p>
-                      <p className="text-[10px] text-gray-500">Tam: {item.size} • {item.periodDays} dias</p>
+              <div className="flex items-center justify-between mb-3">
+                <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Carrinho</h4>
+                <span className="text-xs text-gray-400">{cart.length} {cart.length === 1 ? 'item' : 'itens'}</span>
+              </div>
+              <div className="space-y-2 mb-4 max-h-48 overflow-y-auto">
+                {cart.map((item, index) => {
+                  const productSizes = (item.product.size || '').split(';').filter(Boolean)
+                  return (
+                    <div key={index} className="bg-gray-50 rounded-lg p-2.5">
+                      <div className="flex items-center gap-3">
+                        {item.product.image_url ? (
+                          <img src={item.product.image_url} alt="" className="w-8 h-10 rounded object-cover" />
+                        ) : (
+                          <div className="w-8 h-10 rounded bg-gray-200 flex items-center justify-center text-xs">👗</div>
+                        )}
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs font-medium text-[var(--color-primary)] truncate">{item.product.name}</p>
+                          {item.product.brand && <p className="text-[9px] text-gray-400 uppercase">{item.product.brand}</p>}
+                          <div className="flex items-center gap-2 mt-1">
+                            {productSizes.length > 1 ? (
+                              <select
+                                value={item.size}
+                                onChange={(e) => {
+                                  const newCart = [...cart]
+                                  newCart[index] = { ...item, size: e.target.value }
+                                  setCart(newCart)
+                                }}
+                                className="text-[10px] px-1.5 py-0.5 border border-gray-200 rounded bg-white"
+                              >
+                                {productSizes.map((s) => <option key={s} value={s}>{s}</option>)}
+                              </select>
+                            ) : (
+                              <span className="text-[10px] text-gray-500">Tam: {item.size}</span>
+                            )}
+                            <span className="text-[10px] text-gray-400">• {item.periodDays} dias</span>
+                          </div>
+                        </div>
+                        <div className="text-right flex-shrink-0">
+                          <span className="text-xs font-medium text-[var(--color-primary)] block">
+                            {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(item.price)}
+                          </span>
+                          <button onClick={() => removeFromCart(index)} className="text-[10px] text-red-400 hover:text-red-600 mt-1">remover</button>
+                        </div>
+                      </div>
                     </div>
-                    <span className="text-xs font-medium text-[var(--color-primary)]">
-                      {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(item.price)}
-                    </span>
-                    <button onClick={() => removeFromCart(index)} className="text-red-400 hover:text-red-600 text-xs">✕</button>
-                  </div>
-                ))}
+                  )
+                })}
               </div>
 
               <div className="space-y-1 mb-4">
