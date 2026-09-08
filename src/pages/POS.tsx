@@ -83,6 +83,9 @@ export function POS() {
   const [showPaymentModal, setShowPaymentModal] = useState(false)
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('pix')
   const [submitting, setSubmitting] = useState(false)
+  const [showAsaasLinkModal, setShowAsaasLinkModal] = useState(false)
+  const [asaasLink, setAsaasLink] = useState('')
+  const [generatingLink, setGeneratingLink] = useState(false)
 
   useEffect(() => {
     loadSettings()
@@ -318,6 +321,91 @@ export function POS() {
     } catch (error) {
       console.error('Erro ao confirmar:', error)
       alert('Erro ao confirmar locação.')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  async function handleGenerateAsaasLink() {
+    if (!customer) { alert('Selecione um cliente.'); return }
+    if (cart.length === 0) { alert('Adicione produtos ao carrinho.'); return }
+
+    setGeneratingLink(true)
+    setAsaasLink('')
+    try {
+      const productNames = cart.map((item) => item.product.name).join(', ')
+      const description = `Locação: ${productNames}`
+
+      const { data, error } = await supabase.functions.invoke('asaas-payment-link', {
+        body: {
+          amount: total,
+          customer_name: `${customer.first_name} ${customer.last_name}`,
+          customer_email: customer.email,
+          customer_cpf: (customer as any).cpf || '',
+          description,
+        },
+      })
+
+      if (error) throw error
+      if (!data.success) throw new Error(data.error)
+
+      setAsaasLink(data.invoice_url)
+      setShowPaymentModal(false)
+      setShowAsaasLinkModal(true)
+    } catch (error: any) {
+      console.error('Erro ao gerar link:', error)
+      alert(error.message || 'Erro ao gerar link de pagamento.')
+    } finally {
+      setGeneratingLink(false)
+    }
+  }
+
+  async function handleConfirmAsaasLink() {
+    if (!customer) return
+
+    setSubmitting(true)
+    try {
+      for (const item of cart) {
+        const { error } = await supabase.rpc('create_rental', {
+          p_customer_id: customer.id,
+          p_product_id: item.product.id,
+          p_start_date: startDate,
+          p_end_date: endDate,
+          p_total_price: item.price,
+        })
+        if (error) throw error
+      }
+
+      if (asaasLink) {
+        await supabase.from('orders').insert({
+          order_name: `PDV-${Date.now()}`,
+          email: customer.email,
+          financial_status: 'pending',
+          total_price: total,
+          subtotal,
+          shipping: shippingFee,
+          currency: 'BRL',
+          line_items: cart.map((item) => ({
+            name: item.product.name,
+            size: item.size,
+            price: item.price,
+            period: `${item.periodDays} dias`,
+          })),
+        })
+      }
+
+      alert('Locação criada! O link de pagamento foi enviado ao cliente.')
+      setCart([])
+      setCustomer(null)
+      setCustomerSearch('')
+      setStartDate('')
+      setEndDate('')
+      setShippingRegion('')
+      setShowAsaasLinkModal(false)
+      setAsaasLink('')
+    } catch (error) {
+      console.error('Erro:', error)
+      alert('Erro ao criar locação.')
     } finally {
       setSubmitting(false)
     }
@@ -648,7 +736,7 @@ export function POS() {
       {showPaymentModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl w-full max-w-md p-6">
-            <h3 className="text-lg font-semibold text-[var(--color-primary)] mb-4">Pagamento na Loja</h3>
+            <h3 className="text-lg font-semibold text-[var(--color-primary)] mb-4">Pagamento</h3>
 
             <div className="mb-4 p-3 bg-gray-50 rounded-lg">
               <p className="text-sm text-gray-500">Total a pagar</p>
@@ -657,7 +745,7 @@ export function POS() {
               </p>
             </div>
 
-            <div className="space-y-2 mb-6">
+            <div className="space-y-2 mb-4">
               <label className="text-sm font-medium text-gray-700 block">Forma de Pagamento</label>
               {Object.entries(paymentMethodLabels).map(([value, label]) => (
                 <label key={value} className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${
@@ -676,10 +764,100 @@ export function POS() {
               ))}
             </div>
 
+            <div className="border-t border-gray-100 pt-4 mb-4">
+              <button
+                onClick={handleGenerateAsaasLink}
+                disabled={generatingLink}
+                className="w-full py-3 bg-blue-500 text-white rounded-lg font-medium hover:bg-blue-600 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                {generatingLink ? (
+                  'Gerando link...'
+                ) : (
+                  <>
+                    <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+                    </svg>
+                    Gerar Link Asaas
+                  </>
+                )}
+              </button>
+              <p className="text-xs text-gray-400 text-center mt-2">
+                Gera um link para o cliente pagar online (PIX, boleto ou cartão)
+              </p>
+            </div>
+
             <div className="flex gap-3">
               <button onClick={() => setShowPaymentModal(false)} className="flex-1 py-2.5 border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50">Cancelar</button>
               <button onClick={handleConfirmPayment} disabled={submitting} className="flex-1 py-2.5 bg-green-500 text-white rounded-lg font-medium hover:bg-green-600 disabled:opacity-50">
-                {submitting ? 'Processando...' : 'Confirmar'}
+                {submitting ? 'Processando...' : 'Confirmar na Loja'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showAsaasLinkModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl w-full max-w-md p-6">
+            <h3 className="text-lg font-semibold text-[var(--color-primary)] mb-4">Link de Pagamento Asaas</h3>
+
+            <div className="mb-4 p-3 bg-green-50 rounded-lg border border-green-200">
+              <p className="text-sm text-green-700 font-medium">Link gerado com sucesso!</p>
+              <p className="text-xs text-green-600 mt-1">Copie e envie para o cliente via WhatsApp.</p>
+            </div>
+
+            <div className="mb-4">
+              <label className="text-xs font-medium text-gray-500 mb-1 block">Link de Pagamento</label>
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  value={asaasLink}
+                  readOnly
+                  className="flex-1 px-3 py-2 border border-gray-200 rounded-lg text-sm bg-gray-50"
+                />
+                <button
+                  onClick={() => {
+                    navigator.clipboard.writeText(asaasLink)
+                    alert('Link copiado!')
+                  }}
+                  className="px-4 py-2 bg-[var(--color-accent)] text-white rounded-lg text-sm font-medium hover:bg-[var(--color-accent-light)]"
+                >
+                  Copiar
+                </button>
+              </div>
+            </div>
+
+            {customer?.phone && (
+              <a
+                href={`https://wa.me/55${customer.phone.replace(/\D/g, '')}?text=${encodeURIComponent(`Olá! Aqui está o link para pagamento da sua locação: ${asaasLink}`)}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="w-full py-3 bg-green-500 text-white rounded-lg font-medium hover:bg-green-600 transition-colors flex items-center justify-center gap-2 mb-4"
+              >
+                Enviar via WhatsApp
+              </a>
+            )}
+
+            <div className="p-3 bg-yellow-50 rounded-lg border border-yellow-200 mb-4">
+              <p className="text-xs text-yellow-700">
+                <strong>Importante:</strong> Após o cliente pagar, o status será atualizado automaticamente via webhook.
+                A reserva ficará com pagamento pendente até a confirmação.
+              </p>
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => { setShowAsaasLinkModal(false); setAsaasLink('') }}
+                className="flex-1 py-2.5 border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50"
+              >
+                Fechar
+              </button>
+              <button
+                onClick={handleConfirmAsaasLink}
+                disabled={submitting}
+                className="flex-1 py-2.5 bg-blue-500 text-white rounded-lg font-medium hover:bg-blue-600 disabled:opacity-50"
+              >
+                {submitting ? 'Processando...' : 'Confirmar Reserva'}
               </button>
             </div>
           </div>
