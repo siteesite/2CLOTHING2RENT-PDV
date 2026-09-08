@@ -86,6 +86,7 @@ export function POS() {
   const [showAsaasLinkModal, setShowAsaasLinkModal] = useState(false)
   const [asaasLink, setAsaasLink] = useState('')
   const [generatingLink, setGeneratingLink] = useState(false)
+  const [asaasBillingType, setAsaasBillingType] = useState<'PIX' | 'CREDIT_CARD'>('PIX')
 
   useEffect(() => {
     loadSettings()
@@ -343,6 +344,7 @@ export function POS() {
           customer_email: customer.email,
           customer_cpf: (customer as any).cpf || '',
           description,
+          billing_type: asaasBillingType,
         },
       })
 
@@ -765,6 +767,29 @@ export function POS() {
             </div>
 
             <div className="border-t border-gray-100 pt-4 mb-4">
+              <label className="text-xs font-medium text-gray-500 mb-2 block">Link Asaas - Forma de pagamento</label>
+              <div className="flex gap-2 mb-3">
+                <button
+                  onClick={() => setAsaasBillingType('PIX')}
+                  className={`flex-1 px-3 py-2 rounded-lg text-sm font-medium border transition-colors ${
+                    asaasBillingType === 'PIX'
+                      ? 'bg-green-500 text-white border-green-500'
+                      : 'border-gray-200 text-gray-600 hover:border-gray-300'
+                  }`}
+                >
+                  PIX
+                </button>
+                <button
+                  onClick={() => setAsaasBillingType('CREDIT_CARD')}
+                  className={`flex-1 px-3 py-2 rounded-lg text-sm font-medium border transition-colors ${
+                    asaasBillingType === 'CREDIT_CARD'
+                      ? 'bg-blue-500 text-white border-blue-500'
+                      : 'border-gray-200 text-gray-600 hover:border-gray-300'
+                  }`}
+                >
+                  Cartão de Crédito
+                </button>
+              </div>
               <button
                 onClick={handleGenerateAsaasLink}
                 disabled={generatingLink}
@@ -782,7 +807,7 @@ export function POS() {
                 )}
               </button>
               <p className="text-xs text-gray-400 text-center mt-2">
-                Gera um link para o cliente pagar online (PIX, boleto ou cartão)
+                Gera um link para o cliente pagar online via {asaasBillingType === 'PIX' ? 'PIX' : 'Cartão de Crédito'}
               </p>
             </div>
 
