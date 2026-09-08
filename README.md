@@ -1,32 +1,58 @@
-# React + TypeScript + Vite
+# CLOTHING2RENT PDV
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+Sistema PDV (Ponto de Venda) para locações presenciais da Clothing2Rent.
 
-Currently, two official plugins are available:
+## Stack
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+- React 19
+- TypeScript
+- Vite
+- Tailwind CSS 4
+- Supabase (self-hosted)
+- React Router v7
 
-## React Compiler
+## Setup
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the Oxlint configuration
-
-If you are developing a production application, we recommend enabling type-aware lint rules by installing `oxlint-tsgolint` and editing `.oxlintrc.json`:
-
-```json
-{
-  "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript", "oxc"],
-  "options": {
-    "typeAware": true
-  },
-  "rules": {
-    "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
-}
+```bash
+npm install
+npm run dev
 ```
 
-See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+## Estrutura
+
+```
+src/
+├── components/layout/   → Sidebar, Header, PageContainer
+├── lib/supabase.ts      → Conexão Supabase
+├── services/supabase.ts → Serviços centralizados
+├── types/index.ts       → Tipos TypeScript
+├── pages/
+│   ├── Dashboard.tsx    → Stats do dia
+│   ├── POS.tsx          → Nova Locação (PDV)
+│   ├── Products.tsx     → Listagem de produtos
+│   ├── Customers.tsx    → Listagem de clientes
+│   ├── Reservations.tsx → Lista de reservas
+│   ├── Pickup.tsx       → Retiradas com checklist
+│   ├── Returns.tsx      → Devoluções com inspeção
+│   └── Overdue.tsx      → Atrasos com multas
+```
+
+## Migration SQL
+
+O arquivo `supabase/migrations/001_pdv_tables_and_functions.sql` contém:
+
+- Tabelas: `rental_transactions`, `rental_deposits`, `product_operations`, `product_locations`, `rental_inspections`, `audit_logs`
+- Funções RPC: `create_rental()`, `check_product_availability()`, `register_payment()`, `register_deposit()`, `process_return()`, `get_dashboard_stats()`
+- Triggers de auditoria
+- RLS policies
+
+Aplicar manualmente no Studio do Supabase.
+
+## Banco de Dados
+
+O PDV utiliza o mesmo banco do e-commerce (Supabase self-hosted). Tabelas compartilhadas:
+
+- `products`
+- `customers`
+- `orders`
+- `rentals`
