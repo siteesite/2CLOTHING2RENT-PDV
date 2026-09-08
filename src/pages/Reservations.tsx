@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
-import type { Rental, Product } from '../types'
+import type { Rental, Product, PaymentMethod } from '../types'
 
 interface OrderInfo {
   order_name: string
@@ -25,6 +25,12 @@ export function Reservations() {
   const [loading, setLoading] = useState(true)
   const [statusFilter, setStatusFilter] = useState('')
   const [selectedRental, setSelectedRental] = useState<EnrichedRental | null>(null)
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState<EnrichedRental | null>(null)
+  const [showPaymentModal, setShowPaymentModal] = useState<EnrichedRental | null>(null)
+  const [paymentForm, setPaymentForm] = useState({
+    amount: 0,
+    payment_method: 'pix' as PaymentMethod,
+  })
 
   useEffect(() => {
     loadRentals()
@@ -151,6 +157,76 @@ export function Reservations() {
     return { text: `Faltam ${days} dias`, color: 'text-gray-500' }
   }
 
+  async function handleDeleteRental(rental: EnrichedRental) {
+    try {
+      const { error } = await supabase
+        .from('rentals')
+        .update({ status: 'cancelled', updated_at: new Date().toISOString() })
+        .eq('id', rental.id)
+
+      if (error) throw error
+
+      if (rental.product_id) {
+        await supabase
+          .from('products')
+          .update({ operational_status: 'available' })
+          .eq('id', rental.product_id)
+      }
+
+      setShowDeleteConfirm(null)
+      setSelectedRental(null)
+      loadRentals()
+    } catch (error) {
+      console.error('Erro ao cancelar reserva:', error)
+      alert('Erro ao cancelar reserva.')
+    }
+  }
+
+  async function handleRegisterPayment() {
+    if (!showPaymentModal) return
+
+    try {
+      await supabase.from('rental_transactions').insert({
+        rental_id: showPaymentModal.id,
+        amount: paymentForm.amount,
+        payment_method: paymentForm.payment_method,
+        status: 'completed',
+        transaction_type: 'payment',
+      })
+
+      if (showPaymentModal.order_name) {
+        await supabase
+          .from('orders')
+          .update({ financial_status: 'paid', paid_at: new Date().toISOString() })
+          .eq('order_name', showPaymentModal.order_name)
+      }
+
+      setShowPaymentModal(null)
+      setPaymentForm({ amount: 0, payment_method: 'pix' })
+      loadRentals()
+    } catch (error) {
+      console.error('Erro ao registrar pagamento:', error)
+      alert('Erro ao registrar pagamento.')
+    }
+  }
+
+  function openPaymentModal(rental: EnrichedRental) {
+    setShowPaymentModal(rental)
+    setPaymentForm({
+      amount: rental.pending_amount || rental.total_price || 0,
+      payment_method: 'pix',
+    })
+  }
+
+  const paymentMethodLabels: Record<string, string> = {
+    pix: 'PIX',
+    credit: 'Crédito',
+    debit: 'Débito',
+    cash: 'Dinheiro',
+    transfer: 'Transferência',
+    payment_link: 'Link de Pgto',
+  }
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -239,15 +315,39 @@ export function Reservations() {
                   </div>
                 </div>
 
-                <button
-                  onClick={() => setSelectedRental(rental)}
-                  className="p-2 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-[var(--color-primary)] transition-colors flex-shrink-0"
-                  title="Ver detalhes"
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
-                  </svg>
-                </button>
+                <div className="flex items-center gap-1 flex-shrink-0">
+                  {(paymentStatus === 'pending' || rental.status === 'pending' || rental.status === 'pending_payment') && (
+                    <>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); openPaymentModal(rental) }}
+                        className="p-2 rounded-lg hover:bg-green-50 text-green-500 hover:text-green-700 transition-colors"
+                        title="Registrar pagamento"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                      </button>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); setShowDeleteConfirm(rental) }}
+                        className="p-2 rounded-lg hover:bg-red-50 text-red-400 hover:text-red-600 transition-colors"
+                        title="Cancelar reserva"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                        </svg>
+                      </button>
+                    </>
+                  )}
+                  <button
+                    onClick={() => setSelectedRental(rental)}
+                    className="p-2 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-[var(--color-primary)] transition-colors"
+                    title="Ver detalhes"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                    </svg>
+                  </button>
+                </div>
               </div>
             </div>
           )
@@ -422,6 +522,91 @@ export function Reservations() {
                 className="w-full mt-6 py-2.5 border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50 text-sm"
               >
                 Fechar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl w-full max-w-sm p-6">
+            <h3 className="text-lg font-semibold text-[var(--color-primary)] mb-2">Cancelar Reserva</h3>
+            <p className="text-sm text-gray-500 mb-4">
+              Tem certeza que deseja cancelar a reserva de <strong>{showDeleteConfirm.product?.name}</strong>?
+              Essa ação não pode ser desfeita.
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowDeleteConfirm(null)}
+                className="flex-1 py-2.5 border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50 text-sm"
+              >
+                Não, manter
+              </button>
+              <button
+                onClick={() => handleDeleteRental(showDeleteConfirm)}
+                className="flex-1 py-2.5 bg-red-500 text-white rounded-lg hover:bg-red-600 text-sm font-medium"
+              >
+                Sim, cancelar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showPaymentModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl w-full max-w-md p-6">
+            <h3 className="text-lg font-semibold text-[var(--color-primary)] mb-4">Registrar Pagamento</h3>
+
+            <div className="flex items-center gap-3 mb-6 p-3 bg-gray-50 rounded-lg">
+              {showPaymentModal.product?.image_url ? (
+                <img src={showPaymentModal.product.image_url} alt="" className="w-10 h-12 rounded object-cover" />
+              ) : (
+                <div className="w-10 h-12 rounded bg-gray-200 flex items-center justify-center">👗</div>
+              )}
+              <div>
+                <p className="text-sm font-medium text-[var(--color-primary)]">{showPaymentModal.product?.name}</p>
+                <p className="text-xs text-gray-500">{showPaymentModal.start_date} → {showPaymentModal.end_date}</p>
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Valor (R$)</label>
+                <input
+                  type="number"
+                  value={paymentForm.amount || ''}
+                  onChange={(e) => setPaymentForm({ ...paymentForm, amount: Number(e.target.value) })}
+                  className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Forma de Pagamento</label>
+                <select
+                  value={paymentForm.payment_method}
+                  onChange={(e) => setPaymentForm({ ...paymentForm, payment_method: e.target.value as PaymentMethod })}
+                  className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]"
+                >
+                  {Object.entries(paymentMethodLabels).map(([value, label]) => (
+                    <option key={value} value={value}>{label}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div className="flex gap-3 mt-6">
+              <button
+                onClick={() => setShowPaymentModal(null)}
+                className="flex-1 py-2.5 border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleRegisterPayment}
+                className="flex-1 py-2.5 bg-green-500 text-white rounded-lg hover:bg-green-600 font-medium"
+              >
+                Confirmar Pagamento
               </button>
             </div>
           </div>

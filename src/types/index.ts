@@ -59,6 +59,7 @@ export interface Rental {
 }
 
 export type RentalStatus =
+  | 'pending'
   | 'pending_payment'
   | 'confirmed'
   | 'preparing'
