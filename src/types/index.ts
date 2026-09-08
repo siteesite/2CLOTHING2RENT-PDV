@@ -47,17 +47,15 @@ export interface Customer {
 
 export interface Rental {
   id: string
-  customer_id: string
   product_id: string
+  user_id: string | null
   start_date: string
   end_date: string
   status: RentalStatus
   total_price: number | null
-  notes: string | null
+  order_name: string | null
   created_at: string
   updated_at: string
-  customer?: Customer
-  product?: Product
 }
 
 export type RentalStatus =

@@ -118,7 +118,7 @@ export async function createCustomer(customer: Partial<Customer>) {
 export async function getRentals(status?: string) {
   let query = supabase
     .from('rentals')
-    .select('*, customers(*), products(*)')
+    .select('*')
     .order('start_date', { ascending: false })
 
   if (status) {
@@ -127,18 +127,18 @@ export async function getRentals(status?: string) {
 
   const { data, error } = await query
   if (error) throw error
-  return data as (Rental & { customers: Customer; products: Product })[]
+  return data as Rental[]
 }
 
 export async function getRental(id: string) {
   const { data, error } = await supabase
     .from('rentals')
-    .select('*, customers(*), products(*)')
+    .select('*')
     .eq('id', id)
     .single()
 
   if (error) throw error
-  return data as Rental & { customers: Customer; products: Product }
+  return data as Rental
 }
 
 export async function createRental(

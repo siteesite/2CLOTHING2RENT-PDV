@@ -54,15 +54,7 @@ export function Products() {
   }
 
   function getImageUrl(product: Product): string | null {
-    const url = product.image_url
-    if (!url) return null
-    if (url.includes('uggofsioqvqcnpwmnznp.supabase.co')) {
-      return url.replace(
-        'uggofsioqvqcnpwmnznp.supabase.co',
-        'supabasekong-oui3g5xbsnm4gaghfx6d0ojp.185.225.22.183.sslip.io/storage/v1'
-      ).replace('/storage/v1/object/public/', '/object/public/')
-    }
-    return url
+    return product.image_url || null
   }
 
   if (loading) {

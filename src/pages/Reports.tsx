@@ -81,9 +81,9 @@ export function Reports() {
   const customerRentalCount: Record<string, number> = {}
   const customerTotalSpent: Record<string, number> = {}
   rentals.forEach((r) => {
-    if (r.customer_id) {
-      customerRentalCount[r.customer_id] = (customerRentalCount[r.customer_id] || 0) + 1
-      customerTotalSpent[r.customer_id] = (customerTotalSpent[r.customer_id] || 0) + (r.total_price || 0)
+    if (r.user_id) {
+      customerRentalCount[r.user_id] = (customerRentalCount[r.user_id] || 0) + 1
+      customerTotalSpent[r.user_id] = (customerTotalSpent[r.user_id] || 0) + (r.total_price || 0)
     }
   })
 
