@@ -10,7 +10,9 @@ import { Customers } from './pages/Customers'
 import { Pickup } from './pages/Pickup'
 import { Returns } from './pages/Returns'
 import { Overdue } from './pages/Overdue'
-import { Cashier, Reports, Settings } from './pages/Placeholder'
+import { Cashier } from './pages/Cashier'
+import { Reports } from './pages/Reports'
+import { Settings } from './pages/Placeholder'
 
 export default function App() {
   return (
