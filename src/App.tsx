@@ -12,7 +12,7 @@ import { Returns } from './pages/Returns'
 import { Overdue } from './pages/Overdue'
 import { Cashier } from './pages/Cashier'
 import { Reports } from './pages/Reports'
-import { Settings } from './pages/Placeholder'
+import { Settings } from './pages/Settings'
 
 export default function App() {
   return (
