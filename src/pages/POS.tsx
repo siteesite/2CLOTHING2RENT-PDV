@@ -8,6 +8,7 @@ interface CartItem {
   product: Product
   size: string
   price: number
+  periodDays: number
 }
 
 interface RentalDate {
@@ -16,7 +17,38 @@ interface RentalDate {
   status: string
 }
 
+interface Settings {
+  rental_min_days: number
+  rental_max_days: number
+  rental_buffer_days: number
+  rental_periods: { days: number; type: string; label: string; value: number }[]
+  shipping_north: number
+  shipping_northeast: number
+  shipping_central_west: number
+  shipping_southeast: number
+  shipping_south: number
+  delivery_north: number
+  delivery_northeast: number
+  delivery_central_west: number
+  delivery_southeast: number
+  delivery_south: number
+  shipping_active_north: boolean
+  shipping_active_northeast: boolean
+  shipping_active_central_west: boolean
+  shipping_active_southeast: boolean
+  shipping_active_south: boolean
+}
+
+const shippingRegions = [
+  { key: 'southeast', label: 'Sudeste' },
+  { key: 'south', label: 'Sul' },
+  { key: 'central_west', label: 'Centro-Oeste' },
+  { key: 'northeast', label: 'Nordeste' },
+  { key: 'north', label: 'Norte' },
+]
+
 export function POS() {
+  const [settings, setSettings] = useState<Settings | null>(null)
   const [products, setProducts] = useState<Product[]>([])
   const [filteredProducts, setFilteredProducts] = useState<Product[]>([])
   const [displayedProducts, setDisplayedProducts] = useState<Product[]>([])
@@ -44,13 +76,43 @@ export function POS() {
   const [startDate, setStartDate] = useState('')
   const [endDate, setEndDate] = useState('')
   const [selectedSize, setSelectedSize] = useState('')
+  const [selectedPeriod, setSelectedPeriod] = useState(3)
   const [deliveryMethod, setDeliveryMethod] = useState<'pickup' | 'delivery'>('pickup')
+  const [shippingRegion, setShippingRegion] = useState('')
 
   const [showPaymentModal, setShowPaymentModal] = useState(false)
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('pix')
   const [submitting, setSubmitting] = useState(false)
 
-  useEffect(() => { loadProducts() }, [])
+  useEffect(() => {
+    loadSettings()
+    loadProducts()
+  }, [])
+
+  async function loadSettings() {
+    try {
+      const { data, error } = await supabase
+        .from('settings')
+        .select('*')
+        .eq('id', '00000000-0000-0000-0000-000000000000')
+        .single()
+      if (error) throw error
+      setSettings(data)
+      setSelectedPeriod(data.rental_min_days || 3)
+    } catch (error) {
+      console.error('Erro ao carregar configurações:', error)
+    }
+  }
+
+  useEffect(() => {
+    if (!settings) return
+    if (selectedPeriod >= settings.rental_min_days && startDate) {
+      const start = new Date(startDate)
+      const end = new Date(start)
+      end.setDate(end.getDate() + selectedPeriod)
+      setEndDate(end.toISOString().split('T')[0])
+    }
+  }, [selectedPeriod, startDate, settings])
 
   useEffect(() => {
     let result = products.filter((p) => p.status === 'active')
@@ -62,15 +124,9 @@ export function POS() {
         p.handle?.toLowerCase().includes(term)
       )
     }
-    if (sizeFilter) {
-      result = result.filter((p) => (p.size || '').includes(sizeFilter))
-    }
-    if (brandFilter) {
-      result = result.filter((p) => p.brand === brandFilter)
-    }
-    if (categoryFilter) {
-      result = result.filter((p) => p.category === categoryFilter)
-    }
+    if (sizeFilter) result = result.filter((p) => (p.size || '').includes(sizeFilter))
+    if (brandFilter) result = result.filter((p) => p.brand === brandFilter)
+    if (categoryFilter) result = result.filter((p) => p.category === categoryFilter)
     setFilteredProducts(result)
     setPage(1)
     setDisplayedProducts(result.slice(0, PAGE_SIZE))
@@ -98,11 +154,7 @@ export function POS() {
 
   async function loadProducts() {
     try {
-      const { data, error } = await supabase
-        .from('products')
-        .select('*')
-        .eq('status', 'active')
-        .order('name')
+      const { data, error } = await supabase.from('products').select('*').eq('status', 'active').order('name')
       if (error) throw error
       setProducts(data || [])
     } catch (error) {
@@ -126,11 +178,35 @@ export function POS() {
         .order('start_date')
       setRentalDates(data || [])
     } catch (error) {
-      console.error('Erro ao carregar datas:', error)
       setRentalDates([])
     } finally {
       setLoadingDates(false)
     }
+  }
+
+  function isDateAvailable(date: string): boolean {
+    if (!settings) return true
+    const buffer = settings.rental_buffer_days
+    return !rentalDates.some((rd) => {
+      const rdStart = new Date(rd.start_date)
+      const rdEnd = new Date(rd.end_date)
+      rdStart.setDate(rdStart.getDate() - buffer)
+      rdEnd.setDate(rdEnd.getDate() + buffer)
+      const d = new Date(date)
+      return d >= rdStart && d <= rdEnd
+    })
+  }
+
+  function checkPeriodAvailability(start: string, days: number): boolean {
+    if (!settings) return true
+    const startDate = new Date(start)
+    for (let i = 0; i < days; i++) {
+      const d = new Date(startDate)
+      d.setDate(d.getDate() + i)
+      const dateStr = d.toISOString().split('T')[0]
+      if (!isDateAvailable(dateStr)) return false
+    }
+    return true
   }
 
   async function searchCustomers(term: string) {
@@ -144,9 +220,38 @@ export function POS() {
     setCustomerResults(data || [])
   }
 
+  function calculatePrice(basePrice: number, days: number): number {
+    if (!settings) return basePrice
+    const period = settings.rental_periods.find((p) => p.days === days)
+    if (!period) return basePrice
+    if (period.type === 'fixed') return basePrice + period.value
+    if (period.type === 'percentage') return basePrice * (1 + period.value / 100)
+    return basePrice
+  }
+
+  function getShippingFee(): number {
+    if (!settings || !shippingRegion) return 0
+    const key = `shipping_${shippingRegion}` as keyof Settings
+    return (settings[key] as number) || 0
+  }
+
+  function isRegionActive(region: string): boolean {
+    if (!settings) return false
+    const key = `shipping_active_${region}` as keyof Settings
+    return (settings[key] as boolean) || false
+  }
+
   function addToCart() {
     if (!selectedProduct || !startDate || !endDate) {
-      alert('Selecione as datas de início e fim.')
+      alert('Selecione as datas.')
+      return
+    }
+    if (settings && selectedPeriod < settings.rental_min_days) {
+      alert(`O período mínimo de locação é ${settings.rental_min_days} dias.`)
+      return
+    }
+    if (!checkPeriodAvailability(startDate, selectedPeriod)) {
+      alert('Este produto não está disponível no período selecionado. Verifique o calendário.')
       return
     }
     const existing = cart.find((item) => item.product.id === selectedProduct.id && item.size === selectedSize)
@@ -154,7 +259,8 @@ export function POS() {
       alert('Este produto já está no carrinho.')
       return
     }
-    setCart([...cart, { product: selectedProduct, size: selectedSize, price: selectedProduct.price || 0 }])
+    const price = calculatePrice(selectedProduct.price || 0, selectedPeriod)
+    setCart([...cart, { product: selectedProduct, size: selectedSize, price, periodDays: selectedPeriod }])
     setSelectedProduct(null)
     setRentalDates([])
     setStartDate('')
@@ -166,13 +272,21 @@ export function POS() {
   }
 
   const subtotal = cart.reduce((sum, item) => sum + item.price, 0)
-  const deliveryFee = deliveryMethod === 'delivery' ? 60 : 0
-  const total = subtotal + deliveryFee
+  const shippingFee = deliveryMethod === 'delivery' ? getShippingFee() : 0
+  const total = subtotal + shippingFee
 
   async function handleConfirmPayment() {
     if (!customer) { alert('Selecione um cliente.'); return }
     if (cart.length === 0) { alert('Adicione produtos ao carrinho.'); return }
     if (!startDate || !endDate) { alert('Selecione as datas.'); return }
+    if (deliveryMethod === 'delivery' && !shippingRegion) { alert('Selecione a região de entrega.'); return }
+
+    for (const item of cart) {
+      if (!checkPeriodAvailability(item.product.id, item.periodDays)) {
+        alert(`Conflito: ${item.product.name} não está disponível no período selecionado.`)
+        return
+      }
+    }
 
     setSubmitting(true)
     try {
@@ -187,7 +301,7 @@ export function POS() {
         if (error) throw error
         const result = data as any
         if (result && !result.success) {
-          alert(`Conflito: ${item.product.name} não disponível neste período.`)
+          alert(`Conflito: ${item.product.name} não disponível.`)
           setSubmitting(false)
           return
         }
@@ -199,6 +313,7 @@ export function POS() {
       setCustomerSearch('')
       setStartDate('')
       setEndDate('')
+      setShippingRegion('')
       setShowPaymentModal(false)
     } catch (error) {
       console.error('Erro ao confirmar:', error)
@@ -208,7 +323,7 @@ export function POS() {
     }
   }
 
-  const sizes = [...new Set(products.flatMap((p) => (p.size || '').split(';')).filter(Boolean))].sort()
+  const sizes = [...new Set(products.flatMap((p) => (p.size || '').split(';').filter(Boolean)))].sort()
   const brands = [...new Set(products.map((p) => p.brand).filter(Boolean))].sort()
   const categories = [...new Set(products.map((p) => p.category).filter(Boolean))].sort()
   const productSizes = selectedProduct ? (selectedProduct.size || '').split(';').filter(Boolean) : []
@@ -306,7 +421,7 @@ export function POS() {
               {loadingDates ? (
                 <div className="text-xs text-gray-400 py-4 text-center">Carregando datas...</div>
               ) : (
-                <MiniCalendar rentalDates={rentalDates} />
+                <MiniCalendar rentalDates={rentalDates} bufferDays={settings?.rental_buffer_days || 3} />
               )}
             </div>
 
@@ -316,8 +431,7 @@ export function POS() {
                 <div className="flex flex-wrap gap-1.5">
                   {rentalDates.map((rd, i) => (
                     <span key={i} className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${
-                      rd.status === 'active' ? 'bg-green-100 text-green-700' :
-                      'bg-blue-100 text-blue-700'
+                      rd.status === 'active' ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700'
                     }`}>
                       {rd.start_date} → {rd.end_date} {rd.status === 'active' ? '(na rua)' : ''}
                     </span>
@@ -328,7 +442,7 @@ export function POS() {
           </div>
         )}
 
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 flex-1">
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 flex-1 overflow-y-auto">
           <h3 className="font-semibold text-[var(--color-primary)] mb-4">Locação</h3>
 
           <div className="space-y-3 mb-4">
@@ -369,6 +483,25 @@ export function POS() {
               )}
             </div>
 
+            <div>
+              <label className="text-xs font-medium text-gray-500 mb-1 block">Período de Locação</label>
+              <div className="flex flex-wrap gap-2">
+                {settings?.rental_periods.map((period) => (
+                  <button
+                    key={period.days}
+                    onClick={() => setSelectedPeriod(period.days)}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
+                      selectedPeriod === period.days
+                        ? 'bg-[var(--color-accent)] text-white border-[var(--color-accent)]'
+                        : 'border-gray-200 text-gray-600 hover:border-gray-300'
+                    }`}
+                  >
+                    {period.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="text-xs font-medium text-gray-500 mb-1 block">Data Início</label>
@@ -377,8 +510,8 @@ export function POS() {
               </div>
               <div>
                 <label className="text-xs font-medium text-gray-500 mb-1 block">Data Fim</label>
-                <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]" />
+                <input type="date" value={endDate} readOnly
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-gray-50 text-gray-500" />
               </div>
             </div>
 
@@ -429,6 +562,26 @@ export function POS() {
               </div>
             </div>
 
+            {deliveryMethod === 'delivery' && (
+              <div>
+                <label className="text-xs font-medium text-gray-500 mb-1 block">Região de Entrega</label>
+                <select
+                  value={shippingRegion}
+                  onChange={(e) => setShippingRegion(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]"
+                >
+                  <option value="">Selecione a região</option>
+                  {shippingRegions
+                    .filter((r) => isRegionActive(r.key))
+                    .map((r) => (
+                      <option key={r.key} value={r.key}>
+                        {r.label} — {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format((settings?.[`shipping_${r.key}` as keyof Settings] as number) || 0)} ({settings?.[`delivery_${r.key}` as keyof Settings] as number} dias)
+                      </option>
+                    ))}
+                </select>
+              </div>
+            )}
+
             {selectedProduct && (
               <button
                 onClick={addToCart}
@@ -453,7 +606,7 @@ export function POS() {
                     )}
                     <div className="flex-1 min-w-0">
                       <p className="text-xs font-medium text-[var(--color-primary)] truncate">{item.product.name}</p>
-                      <p className="text-[10px] text-gray-500">Tam: {item.size}</p>
+                      <p className="text-[10px] text-gray-500">Tam: {item.size} • {item.periodDays} dias</p>
                     </div>
                     <span className="text-xs font-medium text-[var(--color-primary)]">
                       {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(item.price)}
@@ -468,10 +621,10 @@ export function POS() {
                   <span className="text-gray-500">Subtotal</span>
                   <span>{new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(subtotal)}</span>
                 </div>
-                {deliveryMethod === 'delivery' && (
+                {deliveryMethod === 'delivery' && shippingRegion && (
                   <div className="flex justify-between text-sm">
-                    <span className="text-gray-500">Frete</span>
-                    <span>{new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(deliveryFee)}</span>
+                    <span className="text-gray-500">Frete ({shippingRegions.find((r) => r.key === shippingRegion)?.label})</span>
+                    <span>{new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(shippingFee)}</span>
                   </div>
                 )}
                 <div className="flex justify-between text-lg font-bold border-t border-gray-100 pt-2">
@@ -524,17 +677,8 @@ export function POS() {
             </div>
 
             <div className="flex gap-3">
-              <button
-                onClick={() => setShowPaymentModal(false)}
-                className="flex-1 py-2.5 border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50"
-              >
-                Cancelar
-              </button>
-              <button
-                onClick={handleConfirmPayment}
-                disabled={submitting}
-                className="flex-1 py-2.5 bg-green-500 text-white rounded-lg font-medium hover:bg-green-600 disabled:opacity-50"
-              >
+              <button onClick={() => setShowPaymentModal(false)} className="flex-1 py-2.5 border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50">Cancelar</button>
+              <button onClick={handleConfirmPayment} disabled={submitting} className="flex-1 py-2.5 bg-green-500 text-white rounded-lg font-medium hover:bg-green-600 disabled:opacity-50">
                 {submitting ? 'Processando...' : 'Confirmar'}
               </button>
             </div>
@@ -545,7 +689,7 @@ export function POS() {
   )
 }
 
-function MiniCalendar({ rentalDates }: { rentalDates: RentalDate[] }) {
+function MiniCalendar({ rentalDates, bufferDays }: { rentalDates: RentalDate[]; bufferDays: number }) {
   const [currentMonth, setCurrentMonth] = useState(new Date())
 
   const year = currentMonth.getFullYear()
@@ -557,10 +701,21 @@ function MiniCalendar({ rentalDates }: { rentalDates: RentalDate[] }) {
   const monthNames = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez']
   const dayNames = ['D', 'S', 'T', 'Q', 'Q', 'S', 'S']
 
-  function getStatus(day: number): string | null {
+  function getDayInfo(day: number): { status: string | null; buffered: boolean } {
     const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
     const match = rentalDates.find((rd) => dateStr >= rd.start_date && dateStr <= rd.end_date)
-    return match?.status || null
+    if (match) return { status: match.status, buffered: false }
+
+    const buffered = rentalDates.some((rd) => {
+      const rdStart = new Date(rd.start_date)
+      const rdEnd = new Date(rd.end_date)
+      rdStart.setDate(rdStart.getDate() - bufferDays)
+      rdEnd.setDate(rdEnd.getDate() + bufferDays)
+      const d = new Date(dateStr)
+      return d >= rdStart && d <= rdEnd
+    })
+
+    return { status: null, buffered }
   }
 
   const days = []
@@ -581,7 +736,7 @@ function MiniCalendar({ rentalDates }: { rentalDates: RentalDate[] }) {
         {days.map((day, i) => {
           if (!day) return <div key={i} />
           const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
-          const status = getStatus(day)
+          const { status, buffered } = getDayInfo(day)
           const isToday = dateStr === today
           const isPast = dateStr < today
 
@@ -593,13 +748,20 @@ function MiniCalendar({ rentalDates }: { rentalDates: RentalDate[] }) {
                   ? 'bg-green-200 text-green-800 font-medium'
                   : status
                   ? 'bg-blue-100 text-blue-700 font-medium'
+                  : buffered
+                  ? 'bg-amber-50 text-amber-400'
                   : isToday
                   ? 'bg-[var(--color-accent)] text-white font-bold'
                   : isPast
                   ? 'text-gray-300'
                   : 'text-gray-600'
               }`}
-              title={status ? `Ocupado (${status})` : 'Disponível'}
+              title={
+                status === 'active' ? 'Na rua' :
+                status ? 'Reservado' :
+                buffered ? `Buffer (${bufferDays} dias)` :
+                'Disponível'
+              }
             >
               {day}
             </div>
@@ -609,6 +771,7 @@ function MiniCalendar({ rentalDates }: { rentalDates: RentalDate[] }) {
       <div className="flex items-center gap-3 px-3 py-2 bg-gray-50 border-t border-gray-200">
         <span className="flex items-center gap-1 text-[9px] text-gray-500"><span className="w-2.5 h-2.5 rounded bg-green-200" /> Na rua</span>
         <span className="flex items-center gap-1 text-[9px] text-gray-500"><span className="w-2.5 h-2.5 rounded bg-blue-100" /> Reservado</span>
+        <span className="flex items-center gap-1 text-[9px] text-gray-500"><span className="w-2.5 h-2.5 rounded bg-amber-50" /> Buffer</span>
         <span className="flex items-center gap-1 text-[9px] text-gray-500"><span className="w-2.5 h-2.5 rounded bg-[var(--color-accent)]" /> Hoje</span>
       </div>
     </div>
