@@ -1,13 +1,16 @@
 import { useEffect, useState } from 'react'
-import { getRentals } from '../services/supabase'
-import type { Rental, Customer, Product } from '../types'
+import { supabase } from '../lib/supabase'
+import type { Rental, Product } from '../types'
 
-type RentalWithRelations = Rental & { customers: Customer; products: Product }
+interface EnrichedRental extends Rental {
+  product?: Product
+}
 
 export function Reservations() {
-  const [rentals, setRentals] = useState<RentalWithRelations[]>([])
+  const [rentals, setRentals] = useState<EnrichedRental[]>([])
   const [loading, setLoading] = useState(true)
   const [statusFilter, setStatusFilter] = useState('')
+  const [selectedRental, setSelectedRental] = useState<EnrichedRental | null>(null)
 
   useEffect(() => {
     loadRentals()
@@ -15,8 +18,33 @@ export function Reservations() {
 
   async function loadRentals() {
     try {
-      const data = await getRentals()
-      setRentals(data as RentalWithRelations[])
+      const { data: rentalsData, error } = await supabase
+        .from('rentals')
+        .select('*')
+        .order('start_date', { ascending: false })
+
+      if (error) throw error
+
+      const productIds = [...new Set((rentalsData || []).map((r) => r.product_id).filter(Boolean))]
+
+      let productsMap: Record<string, Product> = {}
+      if (productIds.length > 0) {
+        const { data: productsData } = await supabase
+          .from('products')
+          .select('id, name, brand, category, image_url, size, color, price')
+          .in('id', productIds)
+
+        if (productsData) {
+          productsMap = Object.fromEntries(productsData.map((p) => [p.id, p]))
+        }
+      }
+
+      const enriched: EnrichedRental[] = (rentalsData || []).map((r) => ({
+        ...r,
+        product: productsMap[r.product_id],
+      }))
+
+      setRentals(enriched)
     } catch (error) {
       console.error('Erro ao carregar reservas:', error)
     } finally {
@@ -29,6 +57,7 @@ export function Reservations() {
     : rentals
 
   const statusColors: Record<string, string> = {
+    pending: 'bg-yellow-100 text-yellow-700',
     pending_payment: 'bg-yellow-100 text-yellow-700',
     confirmed: 'bg-blue-100 text-blue-700',
     preparing: 'bg-purple-100 text-purple-700',
@@ -43,6 +72,7 @@ export function Reservations() {
   }
 
   const statusLabels: Record<string, string> = {
+    pending: 'Pendente',
     pending_payment: 'Pgto Pendente',
     confirmed: 'Confirmada',
     preparing: 'Em Preparação',
@@ -77,56 +107,171 @@ export function Reservations() {
             <option key={value} value={value}>{label}</option>
           ))}
         </select>
+        <span className="text-sm text-gray-500 self-center">
+          {filtered.length} reserva{filtered.length !== 1 ? 's' : ''}
+        </span>
       </div>
 
-      <div className="text-sm text-gray-500">
-        {filtered.length} reserva{filtered.length !== 1 ? 's' : ''}
-      </div>
+      <div className="space-y-3">
+        {filtered.map((rental) => (
+          <div
+            key={rental.id}
+            className="bg-white rounded-xl p-4 shadow-sm border border-gray-100 hover:border-gray-200 transition-colors"
+          >
+            <div className="flex items-center gap-4">
+              {rental.product?.image_url ? (
+                <img
+                  src={rental.product.image_url}
+                  alt={rental.product.name}
+                  className="w-14 h-18 rounded-lg object-cover flex-shrink-0"
+                />
+              ) : (
+                <div className="w-14 h-18 rounded-lg bg-gray-100 flex items-center justify-center text-xl flex-shrink-0">
+                  👗
+                </div>
+              )}
 
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead>
-              <tr className="border-b border-gray-100 bg-gray-50">
-                <th className="text-left px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Cliente</th>
-                <th className="text-left px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Produto</th>
-                <th className="text-left px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Período</th>
-                <th className="text-left px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Valor</th>
-                <th className="text-left px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map((rental) => (
-                <tr key={rental.id} className="border-b border-gray-50 hover:bg-gray-50 transition-colors">
-                  <td className="px-6 py-4 text-sm font-medium text-[var(--color-primary)]">
-                    {rental.customers?.first_name} {rental.customers?.last_name}
-                  </td>
-                  <td className="px-6 py-4 text-sm text-gray-500">
-                    {rental.products?.name}
-                  </td>
-                  <td className="px-6 py-4 text-sm text-gray-500">
-                    {rental.start_date} → {rental.end_date}
-                  </td>
-                  <td className="px-6 py-4 text-sm font-medium text-[var(--color-primary)]">
-                    {rental.total_price
-                      ? new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(rental.total_price)
-                      : '—'}
-                  </td>
-                  <td className="px-6 py-4">
-                    <span className={`text-xs font-medium px-2.5 py-1 rounded-full ${statusColors[rental.status] || 'bg-gray-100 text-gray-700'}`}>
-                      {statusLabels[rental.status] || rental.status}
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center justify-between gap-2">
+                  <h3 className="font-semibold text-sm text-[var(--color-primary)] truncate">
+                    {rental.product?.name || 'Produto'}
+                  </h3>
+                  <span className={`text-xs font-medium px-2.5 py-1 rounded-full flex-shrink-0 ${statusColors[rental.status] || 'bg-gray-100 text-gray-700'}`}>
+                    {statusLabels[rental.status] || rental.status}
+                  </span>
+                </div>
+
+                {rental.product?.brand && (
+                  <p className="text-xs text-gray-500 mt-0.5">{rental.product.brand}</p>
+                )}
+
+                <div className="flex items-center gap-4 mt-2 text-xs text-gray-500">
+                  <span>📅 {rental.start_date} → {rental.end_date}</span>
+                  {rental.total_price && (
+                    <span className="font-medium text-[var(--color-primary)]">
+                      {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(rental.total_price)}
                     </span>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+                  )}
+                  {rental.order_name && (
+                    <span className="text-gray-400">#{rental.order_name}</span>
+                  )}
+                </div>
+              </div>
+
+              <button
+                onClick={() => setSelectedRental(rental)}
+                className="p-2 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-[var(--color-primary)] transition-colors flex-shrink-0"
+                title="Ver detalhes"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                </svg>
+              </button>
+            </div>
+          </div>
+        ))}
       </div>
 
       {filtered.length === 0 && (
         <div className="text-center py-12 text-gray-400">
           Nenhuma reserva encontrada.
+        </div>
+      )}
+
+      {selectedRental && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+            <div className="p-6">
+              <div className="flex items-center justify-between mb-6">
+                <h3 className="text-lg font-semibold text-[var(--color-primary)]">Detalhes da Reserva</h3>
+                <button
+                  onClick={() => setSelectedRental(null)}
+                  className="p-2 rounded-lg hover:bg-gray-100 text-gray-400"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+
+              <div className="flex items-start gap-4 mb-6">
+                {selectedRental.product?.image_url ? (
+                  <img
+                    src={selectedRental.product.image_url}
+                    alt={selectedRental.product.name}
+                    className="w-24 h-32 rounded-lg object-cover"
+                  />
+                ) : (
+                  <div className="w-24 h-32 rounded-lg bg-gray-100 flex items-center justify-center text-3xl">👗</div>
+                )}
+                <div>
+                  <h4 className="font-semibold text-[var(--color-primary)]">{selectedRental.product?.name}</h4>
+                  {selectedRental.product?.brand && (
+                    <p className="text-sm text-gray-500">{selectedRental.product.brand}</p>
+                  )}
+                  {selectedRental.product?.category && (
+                    <p className="text-xs text-gray-400 mt-1">{selectedRental.product.category}</p>
+                  )}
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                <div className="flex justify-between py-2 border-b border-gray-100">
+                  <span className="text-sm text-gray-500">Status</span>
+                  <span className={`text-sm font-medium px-2.5 py-0.5 rounded-full ${statusColors[selectedRental.status]}`}>
+                    {statusLabels[selectedRental.status]}
+                  </span>
+                </div>
+                <div className="flex justify-between py-2 border-b border-gray-100">
+                  <span className="text-sm text-gray-500">Data Início</span>
+                  <span className="text-sm font-medium text-[var(--color-primary)]">{selectedRental.start_date}</span>
+                </div>
+                <div className="flex justify-between py-2 border-b border-gray-100">
+                  <span className="text-sm text-gray-500">Data Fim</span>
+                  <span className="text-sm font-medium text-[var(--color-primary)]">{selectedRental.end_date}</span>
+                </div>
+                {selectedRental.total_price && (
+                  <div className="flex justify-between py-2 border-b border-gray-100">
+                    <span className="text-sm text-gray-500">Valor</span>
+                    <span className="text-sm font-bold text-[var(--color-primary)]">
+                      {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(selectedRental.total_price)}
+                    </span>
+                  </div>
+                )}
+                {selectedRental.order_name && (
+                  <div className="flex justify-between py-2 border-b border-gray-100">
+                    <span className="text-sm text-gray-500">Pedido</span>
+                    <span className="text-sm font-medium text-[var(--color-primary)]">#{selectedRental.order_name}</span>
+                  </div>
+                )}
+                {selectedRental.product?.size && (
+                  <div className="flex justify-between py-2 border-b border-gray-100">
+                    <span className="text-sm text-gray-500">Tamanho</span>
+                    <span className="text-sm text-gray-700">{selectedRental.product.size}</span>
+                  </div>
+                )}
+                {selectedRental.product?.color && (
+                  <div className="flex justify-between py-2 border-b border-gray-100">
+                    <span className="text-sm text-gray-500">Cor</span>
+                    <span className="text-sm text-gray-700">{selectedRental.product.color}</span>
+                  </div>
+                )}
+                <div className="flex justify-between py-2 border-b border-gray-100">
+                  <span className="text-sm text-gray-500">Criado em</span>
+                  <span className="text-sm text-gray-700">
+                    {new Date(selectedRental.created_at).toLocaleDateString('pt-BR')}
+                  </span>
+                </div>
+              </div>
+
+              <button
+                onClick={() => setSelectedRental(null)}
+                className="w-full mt-6 py-2.5 border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50 text-sm"
+              >
+                Fechar
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
