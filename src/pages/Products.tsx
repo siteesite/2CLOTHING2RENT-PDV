@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { supabase } from '../lib/supabase'
+import { getProducts } from '../services/supabase'
 import type { Product } from '../types'
 
 export function Products() {
@@ -14,13 +14,8 @@ export function Products() {
 
   async function loadProducts() {
     try {
-      const { data, error } = await supabase
-        .from('products')
-        .select('*')
-        .order('name')
-
-      if (error) throw error
-      setProducts(data || [])
+      const data = await getProducts()
+      setProducts(data)
     } catch (error) {
       console.error('Erro ao carregar produtos:', error)
     } finally {
@@ -96,6 +91,26 @@ function ProductCard({ product }: { product: Product }) {
       ? JSON.parse(product.images)?.[0]
       : Array.isArray(product.images) ? product.images[0] : null)
 
+  const statusColors: Record<string, string> = {
+    active: 'bg-green-100 text-green-700',
+    draft: 'bg-gray-100 text-gray-700',
+    archived: 'bg-red-100 text-red-700',
+  }
+
+  const operationalStatusColors: Record<string, string> = {
+    available: 'bg-green-100 text-green-700',
+    rented: 'bg-blue-100 text-blue-700',
+    cleaning: 'bg-yellow-100 text-yellow-700',
+    maintenance: 'bg-red-100 text-red-700',
+  }
+
+  const operationalStatusLabels: Record<string, string> = {
+    available: 'Disponível',
+    rented: 'Alugado',
+    cleaning: 'Higienização',
+    maintenance: 'Manutenção',
+  }
+
   return (
     <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden hover:shadow-md transition-shadow">
       <div className="aspect-[3/4] bg-gray-100 relative">
@@ -110,15 +125,18 @@ function ProductCard({ product }: { product: Product }) {
             👗
           </div>
         )}
-        {product.status && (
-          <span className={`absolute top-2 right-2 text-xs font-medium px-2 py-1 rounded-full ${
-            product.status === 'active' ? 'bg-green-100 text-green-700' :
-            product.status === 'draft' ? 'bg-gray-100 text-gray-700' :
-            'bg-yellow-100 text-yellow-700'
-          }`}>
-            {product.status}
-          </span>
-        )}
+        <div className="absolute top-2 right-2 flex flex-col gap-1">
+          {product.status && (
+            <span className={`text-xs font-medium px-2 py-1 rounded-full ${statusColors[product.status] || 'bg-gray-100 text-gray-700'}`}>
+              {product.status}
+            </span>
+          )}
+          {product.operational_status && (
+            <span className={`text-xs font-medium px-2 py-1 rounded-full ${operationalStatusColors[product.operational_status] || 'bg-gray-100 text-gray-700'}`}>
+              {operationalStatusLabels[product.operational_status] || product.operational_status}
+            </span>
+          )}
+        </div>
       </div>
 
       <div className="p-4">

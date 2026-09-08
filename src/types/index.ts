@@ -19,9 +19,7 @@ export interface Product {
   updated_at: string
   synced_at: string | null
   internal_code?: string
-  location_sector?: string
-  location_rack?: string
-  location_position?: string
+  operational_status?: string
 }
 
 export interface Customer {
@@ -54,6 +52,8 @@ export interface Rental {
   notes: string | null
   created_at: string
   updated_at: string
+  customer?: Customer
+  product?: Product
 }
 
 export type RentalStatus =
@@ -76,6 +76,7 @@ export interface RentalTransaction {
   payment_method: PaymentMethod
   status: TransactionStatus
   transaction_type: TransactionType
+  notes: string | null
   created_at: string
   created_by: string | null
 }
@@ -83,6 +84,75 @@ export interface RentalTransaction {
 export type PaymentMethod = 'pix' | 'credit' | 'debit' | 'cash' | 'transfer' | 'payment_link'
 export type TransactionStatus = 'pending' | 'completed' | 'failed' | 'refunded'
 export type TransactionType = 'payment' | 'deposit' | 'refund' | 'damage_charge' | 'late_fee'
+
+export interface RentalDeposit {
+  id: string
+  rental_id: string
+  amount: number
+  payment_method: PaymentMethod
+  status: DepositStatus
+  retained_amount: number
+  retention_reason: string | null
+  returned_at: string | null
+  created_at: string
+  updated_at: string
+  created_by: string | null
+}
+
+export type DepositStatus = 'held' | 'returned' | 'partially_retained' | 'forfeited'
+
+export interface ProductOperation {
+  id: string
+  product_id: string
+  rental_id: string | null
+  operation_type: OperationType
+  notes: string | null
+  created_at: string
+  created_by: string | null
+}
+
+export type OperationType = 'rental' | 'return' | 'inspection' | 'cleaning' | 'maintenance' | 'location_change'
+
+export interface ProductLocation {
+  id: string
+  product_id: string
+  sector: string | null
+  rack: string | null
+  position: string | null
+  notes: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface RentalInspection {
+  id: string
+  rental_id: string
+  result: InspectionResult
+  has_stains: boolean
+  has_tears: boolean
+  zipper_working: boolean
+  buttons_complete: boolean
+  embroidery_complete: boolean
+  no_damage: boolean
+  damage_description: string | null
+  damage_charge: number
+  photos: any
+  inspected_at: string
+  inspected_by: string | null
+}
+
+export type InspectionResult = 'approved' | 'damage' | 'maintenance_needed'
+
+export interface AuditLog {
+  id: string
+  table_name: string
+  record_id: string
+  action: string
+  old_values: any
+  new_values: any
+  user_id: string | null
+  created_at: string
+}
 
 export interface CartItem {
   product: Product
@@ -108,8 +178,19 @@ export interface DashboardStats {
   overdue_count: number
   today_revenue: number
   pending_amount: number
-  rented_products: number
-  available_products: number
-  cleaning_products: number
-  maintenance_products: number
+  total_products: number
+  active_rentals: number
+}
+
+export interface CreateRentalResponse {
+  success: boolean
+  error?: string
+  message?: string
+  rental_id?: string
+  customer_id?: string
+  product_id?: string
+  start_date?: string
+  end_date?: string
+  status?: string
+  total_price?: number
 }

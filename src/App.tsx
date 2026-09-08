@@ -7,7 +7,10 @@ import { POS } from './pages/POS'
 import { Reservations } from './pages/Reservations'
 import { Products } from './pages/Products'
 import { Customers } from './pages/Customers'
-import { Pickup, Returns, Overdue, Cashier, Reports, Settings } from './pages/Placeholder'
+import { Pickup } from './pages/Pickup'
+import { Returns } from './pages/Returns'
+import { Overdue } from './pages/Overdue'
+import { Cashier, Reports, Settings } from './pages/Placeholder'
 
 export default function App() {
   return (

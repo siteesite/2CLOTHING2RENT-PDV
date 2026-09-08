@@ -1,10 +1,13 @@
 import { useEffect, useState } from 'react'
-import { supabase } from '../lib/supabase'
-import type { Rental } from '../types'
+import { getRentals } from '../services/supabase'
+import type { Rental, Customer, Product } from '../types'
+
+type RentalWithRelations = Rental & { customers: Customer; products: Product }
 
 export function Reservations() {
-  const [rentals, setRentals] = useState<Rental[]>([])
+  const [rentals, setRentals] = useState<RentalWithRelations[]>([])
   const [loading, setLoading] = useState(true)
+  const [statusFilter, setStatusFilter] = useState('')
 
   useEffect(() => {
     loadRentals()
@@ -12,19 +15,18 @@ export function Reservations() {
 
   async function loadRentals() {
     try {
-      const { data, error } = await supabase
-        .from('rentals')
-        .select('*, customers(first_name, last_name), products(name)')
-        .order('start_date', { ascending: false })
-
-      if (error) throw error
-      setRentals(data || [])
+      const data = await getRentals()
+      setRentals(data as RentalWithRelations[])
     } catch (error) {
       console.error('Erro ao carregar reservas:', error)
     } finally {
       setLoading(false)
     }
   }
+
+  const filtered = statusFilter
+    ? rentals.filter((r) => r.status === statusFilter)
+    : rentals
 
   const statusColors: Record<string, string> = {
     pending_payment: 'bg-yellow-100 text-yellow-700',
@@ -64,8 +66,21 @@ export function Reservations() {
 
   return (
     <div className="space-y-6">
+      <div className="flex flex-col sm:flex-row gap-4">
+        <select
+          value={statusFilter}
+          onChange={(e) => setStatusFilter(e.target.value)}
+          className="px-4 py-2.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] focus:border-transparent"
+        >
+          <option value="">Todos os status</option>
+          {Object.entries(statusLabels).map(([value, label]) => (
+            <option key={value} value={value}>{label}</option>
+          ))}
+        </select>
+      </div>
+
       <div className="text-sm text-gray-500">
-        {rentals.length} reserva{rentals.length !== 1 ? 's' : ''}
+        {filtered.length} reserva{filtered.length !== 1 ? 's' : ''}
       </div>
 
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
@@ -81,7 +96,7 @@ export function Reservations() {
               </tr>
             </thead>
             <tbody>
-              {rentals.map((rental: any) => (
+              {filtered.map((rental) => (
                 <tr key={rental.id} className="border-b border-gray-50 hover:bg-gray-50 transition-colors">
                   <td className="px-6 py-4 text-sm font-medium text-[var(--color-primary)]">
                     {rental.customers?.first_name} {rental.customers?.last_name}
@@ -109,7 +124,7 @@ export function Reservations() {
         </div>
       </div>
 
-      {rentals.length === 0 && (
+      {filtered.length === 0 && (
         <div className="text-center py-12 text-gray-400">
           Nenhuma reserva encontrada.
         </div>

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { supabase } from '../lib/supabase'
+import { getCustomers, getProducts, createRental } from '../services/supabase'
 import type { Product, Customer, CartItem } from '../types'
 
 export function POS() {
@@ -12,7 +12,7 @@ export function POS() {
   const [startDate, setStartDate] = useState('')
   const [endDate, setEndDate] = useState('')
   const [discount, setDiscount] = useState(0)
-  const [_discountReason, setDiscountReason] = useState('')
+  const [submitting, setSubmitting] = useState(false)
 
   async function searchCustomers(term: string) {
     setCustomerSearch(term)
@@ -20,12 +20,12 @@ export function POS() {
       setCustomerResults([])
       return
     }
-    const { data } = await supabase
-      .from('customers')
-      .select('*')
-      .or(`first_name.ilike.%${term}%,last_name.ilike.%${term}%,email.ilike.%${term}%,phone.ilike.%${term}%`)
-      .limit(10)
-    setCustomerResults(data || [])
+    try {
+      const data = await getCustomers(term)
+      setCustomerResults(data)
+    } catch (error) {
+      console.error('Erro ao buscar clientes:', error)
+    }
   }
 
   async function searchProducts(term: string) {
@@ -34,13 +34,12 @@ export function POS() {
       setProductResults([])
       return
     }
-    const { data } = await supabase
-      .from('products')
-      .select('*')
-      .or(`name.ilike.%${term}%,brand.ilike.%${term}%,handle.ilike.%${term}%`)
-      .eq('status', 'active')
-      .limit(10)
-    setProductResults(data || [])
+    try {
+      const data = await getProducts(term)
+      setProductResults(data)
+    } catch (error) {
+      console.error('Erro ao buscar produtos:', error)
+    }
   }
 
   function addToCart(product: Product) {
@@ -95,28 +94,38 @@ export function POS() {
       return
     }
 
+    setSubmitting(true)
+
     try {
+      const results = []
+
       for (const item of cart) {
-        const { error } = await supabase.from('rentals').insert({
-          customer_id: customer.id,
-          product_id: item.product.id,
-          start_date: item.start_date,
-          end_date: item.end_date,
-          status: 'confirmed',
-          total_price: item.price,
-        })
-        if (error) throw error
+        const result = await createRental(
+          customer.id,
+          item.product.id,
+          item.start_date,
+          item.end_date,
+          item.price
+        )
+        results.push(result)
       }
 
-      alert('Locação confirmada com sucesso!')
-      setCart([])
-      setCustomer(null)
-      setCustomerSearch('')
-      setDiscount(0)
-      setDiscountReason('')
+      const conflicts = results.filter((r) => !r.success)
+
+      if (conflicts.length > 0) {
+        alert(`${conflicts.length} produto(s) não puderam ser reservados por conflito de datas.`)
+      } else {
+        alert('Locação confirmada com sucesso!')
+        setCart([])
+        setCustomer(null)
+        setCustomerSearch('')
+        setDiscount(0)
+      }
     } catch (error) {
       console.error('Erro ao confirmar locação:', error)
       alert('Erro ao confirmar locação. Verifique o console.')
+    } finally {
+      setSubmitting(false)
     }
   }
 
@@ -283,10 +292,10 @@ export function POS() {
 
           <button
             onClick={handleConfirm}
-            disabled={!customer || cart.length === 0}
+            disabled={!customer || cart.length === 0 || submitting}
             className="w-full mt-6 py-3 bg-[var(--color-accent)] text-white rounded-lg font-semibold hover:bg-[var(--color-accent-light)] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            Confirmar Locação
+            {submitting ? 'Processando...' : 'Confirmar Locação'}
           </button>
         </div>
       </div>
