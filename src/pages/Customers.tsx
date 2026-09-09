@@ -146,7 +146,10 @@ export function Customers() {
       } else {
         const { error } = await supabase
           .from('customers')
-          .insert(customerData)
+          .insert({
+            ...customerData,
+            id: crypto.randomUUID(),
+          })
         if (error) throw error
       }
       setShowModal(false)
