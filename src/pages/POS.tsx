@@ -576,7 +576,21 @@ export function POS() {
               {loadingDates ? (
                 <div className="text-xs text-gray-400 py-4 text-center">Carregando datas...</div>
               ) : (
-                <MiniCalendar rentalDates={rentalDates} bufferDays={settings?.rental_buffer_days || 3} />
+                <MiniCalendar
+                  rentalDates={rentalDates}
+                  bufferDays={settings?.rental_buffer_days || 3}
+                  startDate={startDate}
+                  endDate={endDate}
+                  onDateSelect={(start, end) => {
+                    setStartDate(start)
+                    setEndDate(end)
+                    if (start && end) {
+                      const days = Math.ceil((new Date(end).getTime() - new Date(start).getTime()) / (1000 * 60 * 60 * 24)) + 1
+                      const period = settings?.rental_periods?.find((p) => p.days >= days)
+                      if (period) setSelectedPeriod(period.days)
+                    }
+                  }}
+                />
               )}
             </div>
 
@@ -1034,8 +1048,17 @@ export function POS() {
   )
 }
 
-function MiniCalendar({ rentalDates, bufferDays }: { rentalDates: RentalDate[]; bufferDays: number }) {
+interface MiniCalendarProps {
+  rentalDates: RentalDate[]
+  bufferDays: number
+  startDate: string
+  endDate: string
+  onDateSelect: (start: string, end: string) => void
+}
+
+function MiniCalendar({ rentalDates, bufferDays, startDate, endDate, onDateSelect }: MiniCalendarProps) {
   const [currentMonth, setCurrentMonth] = useState(new Date())
+  const [hoverDate, setHoverDate] = useState('')
 
   const year = currentMonth.getFullYear()
   const month = currentMonth.getMonth()
@@ -1048,13 +1071,16 @@ function MiniCalendar({ rentalDates, bufferDays }: { rentalDates: RentalDate[]; 
   const monthNames = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro']
   const dayNames = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb']
 
-  function getDayInfo(day: number): { status: string | null; buffered: boolean } {
-    const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
-    
-    const match = rentalDates.find((rd) => dateStr >= rd.start_date && dateStr <= rd.end_date)
-    if (match) return { status: match.status, buffered: false }
+  function getDateStr(day: number) {
+    return `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+  }
 
-    const buffered = rentalDates.some((rd) => {
+  function isOccupied(dateStr: string): boolean {
+    return rentalDates.some((rd) => dateStr >= rd.start_date && dateStr <= rd.end_date)
+  }
+
+  function isBuffered(dateStr: string): boolean {
+    return rentalDates.some((rd) => {
       const rdStart = new Date(rd.start_date + 'T00:00:00')
       const rdEnd = new Date(rd.end_date + 'T00:00:00')
       rdStart.setDate(rdStart.getDate() - bufferDays)
@@ -1062,13 +1088,62 @@ function MiniCalendar({ rentalDates, bufferDays }: { rentalDates: RentalDate[]; 
       const d = new Date(dateStr + 'T00:00:00')
       return d >= rdStart && d <= rdEnd
     })
+  }
 
-    return { status: null, buffered }
+  function isInSelectedRange(dateStr: string): boolean {
+    if (!startDate) return false
+    const end = endDate || hoverDate
+    if (!end) return dateStr === startDate
+    const min = startDate < end ? startDate : end
+    const max = startDate < end ? end : startDate
+    return dateStr >= min && dateStr <= max
+  }
+
+  function hasConflictInRange(start: string, end: string): boolean {
+    const min = start < end ? start : end
+    const max = start < end ? end : start
+    return rentalDates.some((rd) => {
+      return min <= rd.end_date && max >= rd.start_date
+    })
+  }
+
+  function handleDayClick(day: number) {
+    const dateStr = getDateStr(day)
+    if (dateStr < todayStr) return
+    if (isOccupied(dateStr) || isBuffered(dateStr)) return
+
+    if (!startDate || (startDate && endDate)) {
+      onDateSelect(dateStr, '')
+    } else {
+      if (dateStr < startDate) {
+        if (hasConflictInRange(dateStr, startDate)) {
+          alert('Conflito com locação existente neste período.')
+          return
+        }
+        onDateSelect(dateStr, startDate)
+      } else {
+        if (hasConflictInRange(startDate, dateStr)) {
+          alert('Conflito com locação existente neste período.')
+          return
+        }
+        onDateSelect(startDate, dateStr)
+      }
+    }
+  }
+
+  function handleDayHover(day: number) {
+    if (startDate && !endDate) {
+      setHoverDate(getDateStr(day))
+    }
   }
 
   const days = []
   for (let i = 0; i < firstDay; i++) days.push(null)
   for (let i = 1; i <= daysInMonth; i++) days.push(i)
+
+  const selectedDays = startDate && endDate
+    ? Math.ceil((new Date(endDate).getTime() - new Date(startDate).getTime()) / (1000 * 60 * 60 * 24)) + 1
+    : 0
 
   return (
     <div className="border border-gray-200 rounded-lg overflow-hidden select-none">
@@ -1099,68 +1174,75 @@ function MiniCalendar({ rentalDates, bufferDays }: { rentalDates: RentalDate[]; 
       <div className="grid grid-cols-7 gap-px p-2 bg-white">
         {days.map((day, i) => {
           if (!day) return <div key={i} className="h-8" />
-          const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
-          const { status, buffered } = getDayInfo(day)
+          const dateStr = getDateStr(day)
+          const occupied = isOccupied(dateStr)
+          const buffered = isBuffered(dateStr)
           const isToday = dateStr === todayStr
           const isPast = dateStr < todayStr
+          const isStart = dateStr === startDate
+          const isEnd = dateStr === endDate
+          const inRange = isInSelectedRange(dateStr)
+          const isClickable = !isPast && !occupied && !buffered
 
-          let bgColor = ''
+          let bgColor = 'bg-white border-gray-100'
           let textColor = 'text-gray-700'
-          let tooltip = 'Disponível'
 
-          if (status === 'active') {
+          if (occupied) {
             bgColor = 'bg-red-100 border-red-200'
             textColor = 'text-red-700 font-semibold'
-            tooltip = '🔴 Na rua (alugado)'
-          } else if (status) {
-            bgColor = 'bg-blue-100 border-blue-200'
-            textColor = 'text-blue-700 font-semibold'
-            tooltip = '🔵 Reservado'
           } else if (buffered) {
             bgColor = 'bg-amber-50 border-amber-200'
             textColor = 'text-amber-600'
-            tooltip = `🟡 Buffer (${bufferDays} dias)`
-          } else if (isToday) {
+          } else if (isStart || isEnd) {
             bgColor = 'bg-[var(--color-accent)] border-[var(--color-accent)]'
             textColor = 'text-white font-bold'
-            tooltip = 'Hoje'
+          } else if (inRange) {
+            bgColor = 'bg-pink-50 border-pink-200'
+            textColor = 'text-pink-700'
+          } else if (isToday) {
+            bgColor = 'bg-gray-100 border-gray-300'
+            textColor = 'text-gray-900 font-bold'
           } else if (isPast) {
             bgColor = 'bg-gray-50'
             textColor = 'text-gray-300'
-            tooltip = 'Passado'
-          } else {
-            bgColor = 'bg-white border-gray-100 hover:bg-green-50 hover:border-green-200'
-            textColor = 'text-gray-700'
-            tooltip = '✅ Disponível'
           }
 
           return (
             <div
               key={i}
-              className={`h-8 flex items-center justify-center text-xs rounded border cursor-default transition-colors ${bgColor} ${textColor}`}
-              title={tooltip}
+              onClick={() => isClickable && handleDayClick(day)}
+              onMouseEnter={() => isClickable && handleDayHover(day)}
+              className={`h-8 flex items-center justify-center text-xs rounded border cursor-${isClickable ? 'pointer' : 'default'} transition-colors ${bgColor} ${textColor} ${isClickable ? 'hover:bg-green-50 hover:border-green-300' : ''}`}
+              title={
+                occupied ? 'Ocupado' :
+                buffered ? 'Buffer' :
+                isStart ? 'Início' :
+                isEnd ? 'Fim' :
+                isPast ? 'Passado' :
+                'Clique para selecionar'
+              }
             >
               {day}
             </div>
           )
         })}
       </div>
-      
+
+      {startDate && (
+        <div className="px-3 py-2 bg-gray-50 border-t border-gray-200 text-xs text-gray-600">
+          {startDate}{endDate ? ` → ${endDate} (${selectedDays} dias)` : ' → selecione o fim'}
+        </div>
+      )}
+
       <div className="flex flex-wrap items-center gap-3 px-3 py-2 bg-gray-50 border-t border-gray-200">
         <span className="flex items-center gap-1 text-[10px] text-gray-600">
-          <span className="w-3 h-3 rounded border bg-red-100 border-red-200" /> Na rua
+          <span className="w-3 h-3 rounded border bg-red-100 border-red-200" /> Ocupado
         </span>
         <span className="flex items-center gap-1 text-[10px] text-gray-600">
-          <span className="w-3 h-3 rounded border bg-blue-100 border-blue-200" /> Reservado
+          <span className="w-3 h-3 rounded border bg-[var(--color-accent)]" /> Selecionado
         </span>
         <span className="flex items-center gap-1 text-[10px] text-gray-600">
-          <span className="w-3 h-3 rounded border bg-amber-50 border-amber-200" /> Buffer
-        </span>
-        <span className="flex items-center gap-1 text-[10px] text-gray-600">
-          <span className="w-3 h-3 rounded border bg-[var(--color-accent)]" /> Hoje
-        </span>
-        <span className="flex items-center gap-1 text-[10px] text-gray-600">
-          <span className="w-3 h-3 rounded border bg-green-50 border-green-200" /> Disponível
+          <span className="w-3 h-3 rounded border bg-pink-50 border-pink-200" /> Período
         </span>
       </div>
     </div>
