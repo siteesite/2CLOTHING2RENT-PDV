@@ -172,6 +172,7 @@ export function Customers() {
           .insert({
             ...customerData,
             id: crypto.randomUUID(),
+            created_at: new Date().toISOString(),
           })
         if (error) throw error
       }
