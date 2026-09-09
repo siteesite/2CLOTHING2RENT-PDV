@@ -25,6 +25,13 @@ export function Customers() {
     email: '',
     phone: '',
     cpf: '',
+    cep: '',
+    street: '',
+    number: '',
+    complement: '',
+    neighborhood: '',
+    city: '',
+    state: '',
     note: '',
   })
 
@@ -61,18 +68,30 @@ export function Customers() {
 
   function openCreate() {
     setEditingCustomer(null)
-    setForm({ first_name: '', last_name: '', email: '', phone: '', cpf: '', note: '' })
+    setForm({
+      first_name: '', last_name: '', email: '', phone: '', cpf: '',
+      cep: '', street: '', number: '', complement: '', neighborhood: '',
+      city: '', state: '', note: '',
+    })
     setShowModal(true)
   }
 
   function openEdit(customer: Customer) {
     setEditingCustomer(customer)
+    const addr = (customer as any).default_address || {}
     setForm({
       first_name: customer.first_name || '',
       last_name: customer.last_name || '',
       email: customer.email || '',
       phone: customer.phone || '',
       cpf: (customer as any).cpf || '',
+      cep: addr.zip || '',
+      street: addr.street || '',
+      number: addr.number || '',
+      complement: addr.complement || '',
+      neighborhood: addr.neighborhood || '',
+      city: addr.city || '',
+      state: addr.state || '',
       note: customer.note || '',
     })
     setShowModal(true)
@@ -98,31 +117,36 @@ export function Customers() {
 
   async function handleSave() {
     try {
+      const customerData = {
+        first_name: form.first_name,
+        last_name: form.last_name,
+        email: form.email,
+        phone: form.phone,
+        cpf: form.cpf || null,
+        note: form.note,
+        default_address: {
+          zip: form.cep,
+          street: form.street,
+          number: form.number,
+          complement: form.complement,
+          neighborhood: form.neighborhood,
+          city: form.city,
+          state: form.state,
+          name: `${form.first_name} ${form.last_name}`.trim(),
+        },
+        updated_at: new Date().toISOString(),
+      }
+
       if (editingCustomer) {
         const { error } = await supabase
           .from('customers')
-          .update({
-            first_name: form.first_name,
-            last_name: form.last_name,
-            email: form.email,
-            phone: form.phone,
-            cpf: form.cpf || null,
-            note: form.note,
-            updated_at: new Date().toISOString(),
-          })
+          .update(customerData)
           .eq('id', editingCustomer.id)
         if (error) throw error
       } else {
         const { error } = await supabase
           .from('customers')
-          .insert({
-            first_name: form.first_name,
-            last_name: form.last_name,
-            email: form.email,
-            phone: form.phone,
-            cpf: form.cpf || null,
-            note: form.note,
-          })
+          .insert(customerData)
         if (error) throw error
       }
       setShowModal(false)
@@ -131,6 +155,22 @@ export function Customers() {
     } catch (error) {
       console.error('Erro ao salvar cliente:', error)
       alert('Erro ao salvar cliente.')
+    }
+  }
+
+  async function handleDelete(customer: Customer) {
+    if (!confirm(`Deseja excluir o cliente ${customer.first_name} ${customer.last_name}?`)) return
+    try {
+      const { error } = await supabase
+        .from('customers')
+        .delete()
+        .eq('id', customer.id)
+      if (error) throw error
+      setShowDetailModal(null)
+      loadCustomers()
+    } catch (error) {
+      console.error('Erro ao excluir cliente:', error)
+      alert('Erro ao excluir cliente.')
     }
   }
 
@@ -185,16 +225,14 @@ export function Customers() {
                 <th className="text-left px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">CPF</th>
                 <th className="text-left px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Endereço</th>
                 <th className="text-left px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Cidade/UF</th>
-                <th className="text-left px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Pedidos</th>
-                <th className="text-left px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Total Gasto</th>
                 <th className="text-center px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Ações</th>
               </tr>
             </thead>
             <tbody>
               {filtered.map((customer) => {
-                const addr = customer.default_address
-                const cityUf = addr?.city && addr?.province_code ? `${addr.city}/${addr.province_code}` : addr?.city || ''
-                const address = addr?.address1 ? `${addr.address1}${addr.address2 ? ', ' + addr.address2 : ''}` : ''
+                const addr = (customer as any).default_address
+                const cityUf = addr?.city && addr?.state ? `${addr.city}/${addr.state}` : addr?.city || ''
+                const address = addr?.street ? `${addr.street}${addr.number ? ', ' + addr.number : ''}` : ''
 
                 return (
                   <tr key={customer.id} className="border-b border-gray-50 hover:bg-gray-50 transition-colors">
@@ -213,12 +251,6 @@ export function Customers() {
                     <td className="px-6 py-4 text-sm text-gray-500">{(customer as any).cpf || '—'}</td>
                     <td className="px-6 py-4 text-sm text-gray-500 max-w-[200px] truncate" title={address}>{address || '—'}</td>
                     <td className="px-6 py-4 text-sm text-gray-500">{cityUf || '—'}</td>
-                    <td className="px-6 py-4 text-sm text-gray-500">{customer.total_orders || 0}</td>
-                    <td className="px-6 py-4 text-sm font-medium text-[var(--color-primary)]">
-                      {customer.total_spent
-                        ? new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(customer.total_spent)
-                        : '—'}
-                    </td>
                     <td className="px-6 py-4">
                       <div className="flex items-center justify-center gap-1">
                         <button
@@ -256,58 +288,123 @@ export function Customers() {
 
       {showModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl w-full max-w-md p-6">
-            <h3 className="text-lg font-semibold text-[var(--color-primary)] mb-4">
+          <div className="bg-white rounded-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto p-6">
+            <h3 className="text-lg font-semibold text-[var(--color-primary)] mb-6">
               {editingCustomer ? 'Editar Cliente' : 'Novo Cliente'}
             </h3>
-            <div className="space-y-3">
-              <div className="grid grid-cols-2 gap-3">
-                <input
-                  type="text"
-                  placeholder="Nome"
-                  value={form.first_name}
-                  onChange={(e) => setForm({ ...form, first_name: e.target.value })}
-                  className="px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] text-sm"
-                />
-                <input
-                  type="text"
-                  placeholder="Sobrenome"
-                  value={form.last_name}
-                  onChange={(e) => setForm({ ...form, last_name: e.target.value })}
-                  className="px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] text-sm"
+
+            <div className="space-y-6">
+              <div>
+                <h4 className="text-sm font-semibold text-gray-700 mb-3">Dados Pessoais</h4>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <input
+                    type="text"
+                    placeholder="Nome *"
+                    value={form.first_name}
+                    onChange={(e) => setForm({ ...form, first_name: e.target.value })}
+                    className="px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] text-sm"
+                  />
+                  <input
+                    type="text"
+                    placeholder="Sobrenome *"
+                    value={form.last_name}
+                    onChange={(e) => setForm({ ...form, last_name: e.target.value })}
+                    className="px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] text-sm"
+                  />
+                  <input
+                    type="email"
+                    placeholder="E-mail *"
+                    value={form.email}
+                    onChange={(e) => setForm({ ...form, email: e.target.value })}
+                    className="px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] text-sm"
+                  />
+                  <input
+                    type="tel"
+                    placeholder="Telefone *"
+                    value={form.phone}
+                    onChange={(e) => setForm({ ...form, phone: e.target.value })}
+                    className="px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] text-sm"
+                  />
+                  <input
+                    type="text"
+                    placeholder="CPF *"
+                    value={form.cpf}
+                    onChange={(e) => setForm({ ...form, cpf: e.target.value })}
+                    className="px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] text-sm"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <h4 className="text-sm font-semibold text-gray-700 mb-3">Endereço</h4>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <input
+                    type="text"
+                    placeholder="CEP"
+                    value={form.cep}
+                    onChange={(e) => setForm({ ...form, cep: e.target.value })}
+                    className="px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] text-sm"
+                  />
+                  <input
+                    type="text"
+                    placeholder="Rua"
+                    value={form.street}
+                    onChange={(e) => setForm({ ...form, street: e.target.value })}
+                    className="px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] text-sm sm:col-span-2"
+                  />
+                  <input
+                    type="text"
+                    placeholder="Número"
+                    value={form.number}
+                    onChange={(e) => setForm({ ...form, number: e.target.value })}
+                    className="px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] text-sm"
+                  />
+                  <input
+                    type="text"
+                    placeholder="Complemento"
+                    value={form.complement}
+                    onChange={(e) => setForm({ ...form, complement: e.target.value })}
+                    className="px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] text-sm"
+                  />
+                  <input
+                    type="text"
+                    placeholder="Bairro"
+                    value={form.neighborhood}
+                    onChange={(e) => setForm({ ...form, neighborhood: e.target.value })}
+                    className="px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] text-sm"
+                  />
+                  <input
+                    type="text"
+                    placeholder="Cidade"
+                    value={form.city}
+                    onChange={(e) => setForm({ ...form, city: e.target.value })}
+                    className="px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] text-sm"
+                  />
+                  <select
+                    value={form.state}
+                    onChange={(e) => setForm({ ...form, state: e.target.value })}
+                    className="px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] text-sm"
+                  >
+                    <option value="">Estado</option>
+                    {['AC','AL','AM','AP','BA','CE','DF','ES','GO','MA','MG','MS','MT','PA','PB','PE','PI','PR','RJ','RN','RO','RR','RS','SC','SE','SP','TO'].map(s => (
+                      <option key={s} value={s}>{s}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <h4 className="text-sm font-semibold text-gray-700 mb-3">Observações</h4>
+                <textarea
+                  placeholder="Observações sobre o cliente..."
+                  value={form.note}
+                  onChange={(e) => setForm({ ...form, note: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] text-sm"
+                  rows={3}
                 />
               </div>
-              <input
-                type="email"
-                placeholder="E-mail"
-                value={form.email}
-                onChange={(e) => setForm({ ...form, email: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] text-sm"
-              />
-              <div className="grid grid-cols-2 gap-3">
-                <input
-                  type="tel"
-                  placeholder="Telefone"
-                  value={form.phone}
-                  onChange={(e) => setForm({ ...form, phone: e.target.value })}
-                  className="px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] text-sm"
-                />
-                <input
-                  type="text"
-                  placeholder="CPF"
-                  value={form.cpf}
-                  onChange={(e) => setForm({ ...form, cpf: e.target.value })}
-                  className="px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] text-sm"
-                />
-              </div>
-              <textarea
-                placeholder="Observações"
-                value={form.note}
-                onChange={(e) => setForm({ ...form, note: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] text-sm"
-                rows={3}
-              />
             </div>
+
             <div className="flex gap-3 mt-6">
               <button onClick={() => setShowModal(false)} className="flex-1 py-2.5 border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50">Cancelar</button>
               <button onClick={handleSave} className="flex-1 py-2.5 bg-[var(--color-accent)] text-white rounded-lg hover:bg-[var(--color-accent-light)]">Salvar</button>
@@ -337,68 +434,33 @@ export function Customers() {
                   <h4 className="text-xl font-semibold text-[var(--color-primary)]">
                     {showDetailModal.first_name} {showDetailModal.last_name}
                   </h4>
-                  {showDetailModal.email && (
-                    <p className="text-sm text-gray-500">{showDetailModal.email}</p>
-                  )}
-                  {showDetailModal.phone && (
-                    <p className="text-sm text-gray-500">{showDetailModal.phone}</p>
-                  )}
+                  {showDetailModal.email && <p className="text-sm text-gray-500">{showDetailModal.email}</p>}
+                  {showDetailModal.phone && <p className="text-sm text-gray-500">{showDetailModal.phone}</p>}
                 </div>
               </div>
 
               <div className="grid grid-cols-2 gap-6 mb-6">
                 <div>
-                  <h4 className="text-sm font-semibold text-[var(--color-primary)] mb-3">Informações Pessoais</h4>
+                  <h4 className="text-sm font-semibold text-[var(--color-primary)] mb-3">Dados Pessoais</h4>
                   <div className="space-y-1">
                     <DetailRow label="E-mail" value={showDetailModal.email} />
                     <DetailRow label="Telefone" value={showDetailModal.phone} />
                     <DetailRow label="CPF" value={(showDetailModal as any).cpf} />
-                    <DetailRow label="Customer ID" value={showDetailModal.customer_id} />
                   </div>
                 </div>
                 <div>
                   <h4 className="text-sm font-semibold text-[var(--color-primary)] mb-3">Endereço</h4>
                   <div className="space-y-1">
-                    <DetailRow label="Rua" value={showDetailModal.default_address?.address1} />
-                    <DetailRow label="Complemento" value={showDetailModal.default_address?.address2} />
-                    <DetailRow label="Cidade" value={showDetailModal.default_address?.city} />
-                    <DetailRow label="UF" value={showDetailModal.default_address?.province_code} />
-                    <DetailRow label="CEP" value={showDetailModal.default_address?.zip} />
+                    <DetailRow label="CEP" value={(showDetailModal as any).default_address?.zip} />
+                    <DetailRow label="Rua" value={(showDetailModal as any).default_address?.street} />
+                    <DetailRow label="Número" value={(showDetailModal as any).default_address?.number} />
+                    <DetailRow label="Complemento" value={(showDetailModal as any).default_address?.complement} />
+                    <DetailRow label="Bairro" value={(showDetailModal as any).default_address?.neighborhood} />
+                    <DetailRow label="Cidade" value={(showDetailModal as any).default_address?.city} />
+                    <DetailRow label="Estado" value={(showDetailModal as any).default_address?.state} />
                   </div>
                 </div>
               </div>
-
-              <div className="grid grid-cols-3 gap-4 mb-6">
-                <div className="bg-gray-50 rounded-lg p-4 text-center">
-                  <p className="text-2xl font-bold text-[var(--color-primary)]">{showDetailModal.total_orders || 0}</p>
-                  <p className="text-xs text-gray-500">Pedidos</p>
-                </div>
-                <div className="bg-gray-50 rounded-lg p-4 text-center">
-                  <p className="text-2xl font-bold text-[var(--color-success)]">
-                    {showDetailModal.total_spent
-                      ? new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(showDetailModal.total_spent)
-                      : 'R$ 0'}
-                  </p>
-                  <p className="text-xs text-gray-500">Total Gasto</p>
-                </div>
-                <div className="bg-gray-50 rounded-lg p-4 text-center">
-                  <p className="text-sm font-medium text-[var(--color-primary)]">
-                    {showDetailModal.accepts_email_marketing ? '✅ Sim' : '❌ Não'}
-                  </p>
-                  <p className="text-xs text-gray-500">Marketing</p>
-                </div>
-              </div>
-
-              {showDetailModal.tags && (
-                <div className="mb-6">
-                  <h4 className="text-sm font-semibold text-[var(--color-primary)] mb-2">Tags</h4>
-                  <div className="flex flex-wrap gap-2">
-                    {(Array.isArray(showDetailModal.tags) ? showDetailModal.tags : (showDetailModal.tags as string || '').split(',')).map((tag: string, i: number) => (
-                      <span key={i} className="text-xs bg-gray-100 text-gray-600 px-2 py-1 rounded-full">{tag.trim()}</span>
-                    ))}
-                  </div>
-                </div>
-              )}
 
               {showDetailModal.note && (
                 <div className="mb-6">
@@ -445,6 +507,12 @@ export function Customers() {
                   className="flex-1 py-2.5 bg-[var(--color-accent)] text-white rounded-lg hover:bg-[var(--color-accent-light)]"
                 >
                   Editar
+                </button>
+                <button
+                  onClick={() => handleDelete(showDetailModal)}
+                  className="px-4 py-2.5 border border-red-200 text-red-500 rounded-lg hover:bg-red-50"
+                >
+                  Excluir
                 </button>
               </div>
             </div>
