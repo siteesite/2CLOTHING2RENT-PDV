@@ -66,6 +66,29 @@ export function Customers() {
     )
   })
 
+  async function fetchAddressByCep(cep: string) {
+    const cleanCep = cep.replace(/\D/g, '')
+    if (cleanCep.length !== 8) return
+
+    try {
+      const response = await fetch(`https://viacep.com.br/ws/${cleanCep}/json/`)
+      const data = await response.json()
+
+      if (!data.erro) {
+        setForm((prev) => ({
+          ...prev,
+          street: data.logradouro || prev.street,
+          neighborhood: data.bairro || prev.neighborhood,
+          city: data.localidade || prev.city,
+          state: data.uf || prev.state,
+          complement: data.complemento || prev.complement,
+        }))
+      }
+    } catch (error) {
+      console.error('Erro ao buscar CEP:', error)
+    }
+  }
+
   function openCreate() {
     setEditingCustomer(null)
     setForm({
@@ -345,7 +368,12 @@ export function Customers() {
                     type="text"
                     placeholder="CEP"
                     value={form.cep}
-                    onChange={(e) => setForm({ ...form, cep: e.target.value })}
+                    onChange={(e) => {
+                      const value = e.target.value.replace(/\D/g, '').slice(0, 8)
+                      setForm({ ...form, cep: value })
+                      if (value.length === 8) fetchAddressByCep(value)
+                    }}
+                    maxLength={8}
                     className="px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] text-sm"
                   />
                   <input
