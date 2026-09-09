@@ -24,6 +24,10 @@ export function Reservations() {
   const [rentals, setRentals] = useState<EnrichedRental[]>([])
   const [loading, setLoading] = useState(true)
   const [statusFilter, setStatusFilter] = useState('')
+  const [search, setSearch] = useState('')
+  const [dateFrom, setDateFrom] = useState('')
+  const [dateTo, setDateTo] = useState('')
+  const [paymentFilter, setPaymentFilter] = useState('')
   const [selectedRental, setSelectedRental] = useState<EnrichedRental | null>(null)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<EnrichedRental | null>(null)
   const [showPaymentModal, setShowPaymentModal] = useState<EnrichedRental | null>(null)
@@ -102,9 +106,23 @@ export function Reservations() {
     }
   }
 
-  const filtered = statusFilter
-    ? rentals.filter((r) => r.status === statusFilter)
-    : rentals
+  const filtered = rentals.filter((r) => {
+    if (statusFilter && r.status !== statusFilter) return false
+    if (search) {
+      const term = search.toLowerCase()
+      const productName = r.product?.name?.toLowerCase() || ''
+      const brand = r.product?.brand?.toLowerCase() || ''
+      const orderName = r.order_name?.toLowerCase() || ''
+      if (!productName.includes(term) && !brand.includes(term) && !orderName.includes(term)) return false
+    }
+    if (dateFrom && r.start_date < dateFrom) return false
+    if (dateTo && r.start_date > dateTo) return false
+    if (paymentFilter) {
+      const pStatus = r.order?.financial_status || 'pending'
+      if (pStatus !== paymentFilter) return false
+    }
+    return true
+  })
 
   const statusColors: Record<string, string> = {
     pending: 'bg-yellow-100 text-yellow-700',
@@ -237,20 +255,63 @@ export function Reservations() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row gap-4">
-        <select
-          value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value)}
-          className="px-4 py-2.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] focus:border-transparent"
-        >
-          <option value="">Todos os status</option>
-          {Object.entries(statusLabels).map(([value, label]) => (
-            <option key={value} value={value}>{label}</option>
-          ))}
-        </select>
-        <span className="text-sm text-gray-500 self-center">
-          {filtered.length} reserva{filtered.length !== 1 ? 's' : ''}
-        </span>
+      <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+          <input
+            type="text"
+            placeholder="Buscar produto, marca ou pedido..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] text-sm"
+          />
+          <select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+            className="px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] text-sm"
+          >
+            <option value="">Todos os status</option>
+            {Object.entries(statusLabels).map(([value, label]) => (
+              <option key={value} value={value}>{label}</option>
+            ))}
+          </select>
+          <select
+            value={paymentFilter}
+            onChange={(e) => setPaymentFilter(e.target.value)}
+            className="px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] text-sm"
+          >
+            <option value="">Pagamento</option>
+            <option value="paid">Pago</option>
+            <option value="partially_paid">Parcial</option>
+            <option value="pending">Pendente</option>
+          </select>
+          <input
+            type="date"
+            value={dateFrom}
+            onChange={(e) => setDateFrom(e.target.value)}
+            className="px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] text-sm"
+            placeholder="Data início"
+          />
+          <input
+            type="date"
+            value={dateTo}
+            onChange={(e) => setDateTo(e.target.value)}
+            className="px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] text-sm"
+            placeholder="Data fim"
+          />
+        </div>
+        {(search || statusFilter || paymentFilter || dateFrom || dateTo) && (
+          <div className="flex items-center justify-between mt-3 pt-3 border-t border-gray-100">
+            <span className="text-sm text-gray-500">
+              {filtered.length} reserva{filtered.length !== 1 ? 's' : ''} encontrada{filtered.length !== 1 ? 's' : ''}
+            </span>
+            <button
+              onClick={() => { setSearch(''); setStatusFilter(''); setPaymentFilter(''); setDateFrom(''); setDateTo('') }}
+              className="text-sm text-[var(--color-accent)] hover:underline"
+            >
+              Limpar filtros
+            </button>
+          </div>
+        )}
       </div>
 
       <div className="space-y-3">
