@@ -87,6 +87,10 @@ export function POS() {
   const [asaasLink, setAsaasLink] = useState('')
   const [generatingLink, setGeneratingLink] = useState(false)
   const [asaasBillingType, setAsaasBillingType] = useState<'PIX' | 'CREDIT_CARD'>('PIX')
+  const [couponCode, setCouponCode] = useState('')
+  const [appliedCoupon, setAppliedCoupon] = useState<any>(null)
+  const [couponError, setCouponError] = useState('')
+  const [couponLoading, setCouponLoading] = useState(false)
 
   useEffect(() => {
     loadSettings()
@@ -275,9 +279,70 @@ export function POS() {
     setCart(cart.filter((_, i) => i !== index))
   }
 
+  async function applyCoupon() {
+    if (!couponCode.trim()) return
+    setCouponLoading(true)
+    setCouponError('')
+    setAppliedCoupon(null)
+
+    try {
+      const { data, error } = await supabase
+        .from('coupons')
+        .select('*')
+        .eq('code', couponCode.toUpperCase().trim())
+        .eq('is_active', true)
+        .single()
+
+      if (error || !data) {
+        setCouponError('Cupom inválido ou inativo.')
+        return
+      }
+
+      const now = new Date()
+      if (data.valid_from && new Date(data.valid_from) > now) {
+        setCouponError('Cupom ainda não está válido.')
+        return
+      }
+      if (data.valid_until && new Date(data.valid_until) < now) {
+        setCouponError('Cupom expirado.')
+        return
+      }
+
+      if (data.min_order_value && subtotal < data.min_order_value) {
+        setCouponError(`Valor mínimo para este cupom: ${new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(data.min_order_value)}`)
+        return
+      }
+
+      setAppliedCoupon(data)
+      setCouponError('')
+    } catch (error) {
+      setCouponError('Erro ao validar cupom.')
+    } finally {
+      setCouponLoading(false)
+    }
+  }
+
+  function removeCoupon() {
+    setAppliedCoupon(null)
+    setCouponCode('')
+    setCouponError('')
+  }
+
+  function calculateDiscount(): number {
+    if (!appliedCoupon) return 0
+    if (appliedCoupon.discount_type === 'percentage') {
+      return subtotal * (appliedCoupon.discount_value / 100)
+    }
+    if (appliedCoupon.discount_type === 'fixed') {
+      return appliedCoupon.discount_value
+    }
+    return 0
+  }
+
   const subtotal = cart.reduce((sum, item) => sum + item.price, 0)
   const shippingFee = deliveryMethod === 'delivery' ? getShippingFee() : 0
-  const total = subtotal + shippingFee
+  const discount = calculateDiscount()
+  const total = subtotal + shippingFee - discount
 
   async function handleConfirmPayment() {
     if (!customer) { alert('Selecione um cliente.'); return }
@@ -745,10 +810,59 @@ export function POS() {
                     <span>{new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(shippingFee)}</span>
                   </div>
                 )}
+                {appliedCoupon && (
+                  <div className="flex justify-between text-sm text-green-600">
+                    <span className="flex items-center gap-1">
+                      Cupom {appliedCoupon.code}
+                      <button onClick={removeCoupon} className="text-red-400 hover:text-red-600 ml-1" title="Remover cupom">✕</button>
+                    </span>
+                    <span>-{new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(discount)}</span>
+                  </div>
+                )}
                 <div className="flex justify-between text-lg font-bold border-t border-gray-100 pt-2">
                   <span>Total</span>
                   <span className="text-[var(--color-accent)]">{new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(total)}</span>
                 </div>
+              </div>
+
+              <div className="mb-4">
+                <label className="text-xs font-medium text-gray-500 mb-1 block">Cupom de Desconto</label>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    placeholder="Digite o cupom..."
+                    value={couponCode}
+                    onChange={(e) => { setCouponCode(e.target.value.toUpperCase()); setCouponError('') }}
+                    disabled={!!appliedCoupon}
+                    className="flex-1 px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] disabled:bg-gray-50 disabled:text-gray-400"
+                  />
+                  {appliedCoupon ? (
+                    <button
+                      onClick={removeCoupon}
+                      className="px-4 py-2 bg-red-500 text-white rounded-lg text-sm font-medium hover:bg-red-600 transition-colors"
+                    >
+                      Remover
+                    </button>
+                  ) : (
+                    <button
+                      onClick={applyCoupon}
+                      disabled={!couponCode.trim() || couponLoading}
+                      className="px-4 py-2 bg-gray-800 text-white rounded-lg text-sm font-medium hover:bg-gray-900 transition-colors disabled:opacity-50"
+                    >
+                      {couponLoading ? '...' : 'Aplicar'}
+                    </button>
+                  )}
+                </div>
+                {couponError && (
+                  <p className="text-xs text-red-500 mt-1">{couponError}</p>
+                )}
+                {appliedCoupon && (
+                  <p className="text-xs text-green-600 mt-1">
+                    ✓ {appliedCoupon.discount_type === 'percentage' 
+                      ? `${appliedCoupon.discount_value}% de desconto` 
+                      : `${new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(appliedCoupon.discount_value)} de desconto`}
+                  </p>
+                )}
               </div>
 
               <button
@@ -927,22 +1041,25 @@ function MiniCalendar({ rentalDates, bufferDays }: { rentalDates: RentalDate[]; 
   const month = currentMonth.getMonth()
   const firstDay = new Date(year, month, 1).getDay()
   const daysInMonth = new Date(year, month + 1, 0).getDate()
-  const today = new Date().toISOString().split('T')[0]
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  const todayStr = today.toISOString().split('T')[0]
 
-  const monthNames = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez']
-  const dayNames = ['D', 'S', 'T', 'Q', 'Q', 'S', 'S']
+  const monthNames = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro']
+  const dayNames = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb']
 
   function getDayInfo(day: number): { status: string | null; buffered: boolean } {
     const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+    
     const match = rentalDates.find((rd) => dateStr >= rd.start_date && dateStr <= rd.end_date)
     if (match) return { status: match.status, buffered: false }
 
     const buffered = rentalDates.some((rd) => {
-      const rdStart = new Date(rd.start_date)
-      const rdEnd = new Date(rd.end_date)
+      const rdStart = new Date(rd.start_date + 'T00:00:00')
+      const rdEnd = new Date(rd.end_date + 'T00:00:00')
       rdStart.setDate(rdStart.getDate() - bufferDays)
       rdEnd.setDate(rdEnd.getDate() + bufferDays)
-      const d = new Date(dateStr)
+      const d = new Date(dateStr + 'T00:00:00')
       return d >= rdStart && d <= rdEnd
     })
 
@@ -954,56 +1071,97 @@ function MiniCalendar({ rentalDates, bufferDays }: { rentalDates: RentalDate[]; 
   for (let i = 1; i <= daysInMonth; i++) days.push(i)
 
   return (
-    <div className="border border-gray-200 rounded-lg overflow-hidden">
-      <div className="flex items-center justify-between px-3 py-2 bg-gray-50">
-        <button onClick={() => setCurrentMonth(new Date(year, month - 1, 1))} className="text-gray-400 hover:text-gray-600 text-sm">‹</button>
-        <span className="text-xs font-semibold text-[var(--color-primary)]">{monthNames[month]} {year}</span>
-        <button onClick={() => setCurrentMonth(new Date(year, month + 1, 1))} className="text-gray-400 hover:text-gray-600 text-sm">›</button>
+    <div className="border border-gray-200 rounded-lg overflow-hidden select-none">
+      <div className="flex items-center justify-between px-4 py-3 bg-[var(--color-primary)]">
+        <button 
+          onClick={() => setCurrentMonth(new Date(year, month - 1, 1))} 
+          className="w-8 h-8 flex items-center justify-center rounded-full text-white hover:bg-white/20 transition-colors text-lg font-bold"
+        >
+          ‹
+        </button>
+        <span className="text-sm font-semibold text-white">
+          {monthNames[month]} {year}
+        </span>
+        <button 
+          onClick={() => setCurrentMonth(new Date(year, month + 1, 1))} 
+          className="w-8 h-8 flex items-center justify-center rounded-full text-white hover:bg-white/20 transition-colors text-lg font-bold"
+        >
+          ›
+        </button>
       </div>
-      <div className="grid grid-cols-7 gap-px p-1">
+      
+      <div className="grid grid-cols-7 bg-gray-50 border-b border-gray-200">
         {dayNames.map((d, i) => (
-          <div key={i} className="text-center text-[9px] font-medium text-gray-400 py-1">{d}</div>
+          <div key={i} className="text-center text-[10px] font-semibold text-gray-500 py-2">{d}</div>
         ))}
+      </div>
+      
+      <div className="grid grid-cols-7 gap-px p-2 bg-white">
         {days.map((day, i) => {
-          if (!day) return <div key={i} />
+          if (!day) return <div key={i} className="h-8" />
           const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
           const { status, buffered } = getDayInfo(day)
-          const isToday = dateStr === today
-          const isPast = dateStr < today
+          const isToday = dateStr === todayStr
+          const isPast = dateStr < todayStr
+
+          let bgColor = ''
+          let textColor = 'text-gray-700'
+          let tooltip = 'Disponível'
+
+          if (status === 'active') {
+            bgColor = 'bg-red-100 border-red-200'
+            textColor = 'text-red-700 font-semibold'
+            tooltip = '🔴 Na rua (alugado)'
+          } else if (status) {
+            bgColor = 'bg-blue-100 border-blue-200'
+            textColor = 'text-blue-700 font-semibold'
+            tooltip = '🔵 Reservado'
+          } else if (buffered) {
+            bgColor = 'bg-amber-50 border-amber-200'
+            textColor = 'text-amber-600'
+            tooltip = `🟡 Buffer (${bufferDays} dias)`
+          } else if (isToday) {
+            bgColor = 'bg-[var(--color-accent)] border-[var(--color-accent)]'
+            textColor = 'text-white font-bold'
+            tooltip = 'Hoje'
+          } else if (isPast) {
+            bgColor = 'bg-gray-50'
+            textColor = 'text-gray-300'
+            tooltip = 'Passado'
+          } else {
+            bgColor = 'bg-white border-gray-100 hover:bg-green-50 hover:border-green-200'
+            textColor = 'text-gray-700'
+            tooltip = '✅ Disponível'
+          }
 
           return (
             <div
               key={i}
-              className={`text-center text-[10px] py-1 rounded ${
-                status === 'active'
-                  ? 'bg-green-200 text-green-800 font-medium'
-                  : status
-                  ? 'bg-blue-100 text-blue-700 font-medium'
-                  : buffered
-                  ? 'bg-amber-50 text-amber-400'
-                  : isToday
-                  ? 'bg-[var(--color-accent)] text-white font-bold'
-                  : isPast
-                  ? 'text-gray-300'
-                  : 'text-gray-600'
-              }`}
-              title={
-                status === 'active' ? 'Na rua' :
-                status ? 'Reservado' :
-                buffered ? `Buffer (${bufferDays} dias)` :
-                'Disponível'
-              }
+              className={`h-8 flex items-center justify-center text-xs rounded border cursor-default transition-colors ${bgColor} ${textColor}`}
+              title={tooltip}
             >
               {day}
             </div>
           )
         })}
       </div>
-      <div className="flex items-center gap-3 px-3 py-2 bg-gray-50 border-t border-gray-200">
-        <span className="flex items-center gap-1 text-[9px] text-gray-500"><span className="w-2.5 h-2.5 rounded bg-green-200" /> Na rua</span>
-        <span className="flex items-center gap-1 text-[9px] text-gray-500"><span className="w-2.5 h-2.5 rounded bg-blue-100" /> Reservado</span>
-        <span className="flex items-center gap-1 text-[9px] text-gray-500"><span className="w-2.5 h-2.5 rounded bg-amber-50" /> Buffer</span>
-        <span className="flex items-center gap-1 text-[9px] text-gray-500"><span className="w-2.5 h-2.5 rounded bg-[var(--color-accent)]" /> Hoje</span>
+      
+      <div className="flex flex-wrap items-center gap-3 px-3 py-2 bg-gray-50 border-t border-gray-200">
+        <span className="flex items-center gap-1 text-[10px] text-gray-600">
+          <span className="w-3 h-3 rounded border bg-red-100 border-red-200" /> Na rua
+        </span>
+        <span className="flex items-center gap-1 text-[10px] text-gray-600">
+          <span className="w-3 h-3 rounded border bg-blue-100 border-blue-200" /> Reservado
+        </span>
+        <span className="flex items-center gap-1 text-[10px] text-gray-600">
+          <span className="w-3 h-3 rounded border bg-amber-50 border-amber-200" /> Buffer
+        </span>
+        <span className="flex items-center gap-1 text-[10px] text-gray-600">
+          <span className="w-3 h-3 rounded border bg-[var(--color-accent)]" /> Hoje
+        </span>
+        <span className="flex items-center gap-1 text-[10px] text-gray-600">
+          <span className="w-3 h-3 rounded border bg-green-50 border-green-200" /> Disponível
+        </span>
       </div>
     </div>
   )
