@@ -183,10 +183,16 @@ function AsaasSettings() {
 
         <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
           <h4 className="text-sm font-semibold text-[var(--color-primary)] mb-4">Webhook URL</h4>
-          <p className="text-xs text-gray-500 mb-2">Use esta URL ao configurar o webhook no painel Asaas:</p>
+          <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-lg flex items-center gap-2">
+            <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5 text-green-600 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <p className="text-sm text-green-700 font-medium">Webhook configurado e operacional</p>
+          </div>
+          <p className="text-xs text-gray-500 mb-2">URL configurada no painel Asaas:</p>
           <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
             <code className="text-xs text-[var(--color-primary)] break-all leading-relaxed">
-              https://supabasekong-oui3g5xbsnm4gaghfx6d0ojp.185.225.22.183.sslip.io/functions/v1/asaas-webhook
+              https://supabase.clothing2rent.com.br/functions/v1/asaas-webhook
             </code>
           </div>
           <p className="text-xs text-gray-400 mt-2">Método: POST • Content-Type: application/json</p>
