@@ -182,6 +182,8 @@ export function Customers() {
                 <th className="text-left px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Nome</th>
                 <th className="text-left px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">E-mail</th>
                 <th className="text-left px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Telefone</th>
+                <th className="text-left px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">CPF</th>
+                <th className="text-left px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Endereço</th>
                 <th className="text-left px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Cidade/UF</th>
                 <th className="text-left px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Pedidos</th>
                 <th className="text-left px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Total Gasto</th>
@@ -192,6 +194,7 @@ export function Customers() {
               {filtered.map((customer) => {
                 const addr = customer.default_address
                 const cityUf = addr?.city && addr?.province_code ? `${addr.city}/${addr.province_code}` : addr?.city || ''
+                const address = addr?.address1 ? `${addr.address1}${addr.address2 ? ', ' + addr.address2 : ''}` : ''
 
                 return (
                   <tr key={customer.id} className="border-b border-gray-50 hover:bg-gray-50 transition-colors">
@@ -200,18 +203,15 @@ export function Customers() {
                         <div className="w-8 h-8 rounded-full bg-[var(--color-primary)] text-white flex items-center justify-center text-xs font-medium">
                           {customer.first_name?.[0]?.toUpperCase() || '?'}
                         </div>
-                        <div>
-                          <span className="font-medium text-sm text-[var(--color-primary)] block">
-                            {customer.first_name} {customer.last_name}
-                          </span>
-                          {(customer as any).cpf && (
-                            <span className="text-xs text-gray-400">CPF: {(customer as any).cpf}</span>
-                          )}
-                        </div>
+                        <span className="font-medium text-sm text-[var(--color-primary)]">
+                          {customer.first_name} {customer.last_name}
+                        </span>
                       </div>
                     </td>
                     <td className="px-6 py-4 text-sm text-gray-500">{customer.email || '—'}</td>
                     <td className="px-6 py-4 text-sm text-gray-500">{customer.phone || '—'}</td>
+                    <td className="px-6 py-4 text-sm text-gray-500">{(customer as any).cpf || '—'}</td>
+                    <td className="px-6 py-4 text-sm text-gray-500 max-w-[200px] truncate" title={address}>{address || '—'}</td>
                     <td className="px-6 py-4 text-sm text-gray-500">{cityUf || '—'}</td>
                     <td className="px-6 py-4 text-sm text-gray-500">{customer.total_orders || 0}</td>
                     <td className="px-6 py-4 text-sm font-medium text-[var(--color-primary)]">
