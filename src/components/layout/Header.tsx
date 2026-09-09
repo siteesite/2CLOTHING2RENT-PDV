@@ -15,16 +15,30 @@ const pageTitles: Record<string, string> = {
   '/configuracoes': 'Configurações',
 }
 
-export function Header() {
+interface HeaderProps {
+  onMenuClick: () => void
+}
+
+export function Header({ onMenuClick }: HeaderProps) {
   const location = useLocation()
   const { user, signOut } = useAuth()
   const title = pageTitles[location.pathname] || 'PDV'
 
   return (
-    <header className="h-16 bg-white border-b border-gray-200 flex items-center justify-between px-8 sticky top-0 z-40">
-      <h2 className="text-lg font-semibold text-[var(--color-primary)]">{title}</h2>
+    <header className="h-16 bg-white border-b border-gray-200 flex items-center justify-between px-4 lg:px-8 sticky top-0 z-40">
+      <div className="flex items-center gap-3">
+        <button
+          onClick={onMenuClick}
+          className="lg:hidden p-2 rounded-lg hover:bg-gray-100 text-gray-600"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
+          </svg>
+        </button>
+        <h2 className="text-lg font-semibold text-[var(--color-primary)]">{title}</h2>
+      </div>
       <div className="flex items-center gap-4">
-        <span className="text-sm text-gray-500">{user?.email}</span>
+        <span className="text-sm text-gray-500 hidden sm:block">{user?.email}</span>
         <div className="w-8 h-8 rounded-full bg-[var(--color-accent)] text-white flex items-center justify-center text-sm font-medium">
           {user?.email?.[0]?.toUpperCase() || 'A'}
         </div>

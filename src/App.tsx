@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
 import { Sidebar } from './components/layout/Sidebar'
@@ -18,6 +19,7 @@ import { Settings } from './pages/Settings'
 
 function AppRoutes() {
   const { user, loading } = useAuth()
+  const [sidebarOpen, setSidebarOpen] = useState(false)
 
   if (loading) {
     return (
@@ -34,9 +36,9 @@ function AppRoutes() {
   return (
     <BrowserRouter>
       <div className="min-h-screen bg-[var(--color-bg)]">
-        <Sidebar />
+        <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
         <PageContainer>
-          <Header />
+          <Header onMenuClick={() => setSidebarOpen(true)} />
           <div className="mt-6">
             <Routes>
               <Route path="/" element={<Dashboard />} />
