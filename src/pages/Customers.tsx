@@ -41,12 +41,49 @@ export function Customers() {
 
   async function loadCustomers() {
     try {
-      const { data, error } = await supabase
+      const { data: customersData, error: customersError } = await supabase
         .from('customers')
         .select('*')
         .order('first_name')
-      if (error) throw error
-      setCustomers(data || [])
+      if (customersError) throw customersError
+
+      const { data: ordersData } = await supabase
+        .from('orders')
+        .select('email, customer_phone, customer_cpf, billing_address, shipping_address')
+
+      const ordersByEmail: Record<string, any[]> = {}
+      for (const order of ordersData || []) {
+        if (order.email) {
+          if (!ordersByEmail[order.email]) ordersByEmail[order.email] = []
+          ordersByEmail[order.email].push(order)
+        }
+      }
+
+      const enriched = (customersData || []).map((customer) => {
+        const orders = ordersByEmail[customer.email] || []
+        if (orders.length === 0) return customer
+
+        const latestOrder = orders[0]
+        const addr = customer.default_address?.street ? customer.default_address : (latestOrder.shipping_address || latestOrder.billing_address || {})
+
+        return {
+          ...customer,
+          cpf: customer.cpf || latestOrder.customer_cpf || null,
+          phone: customer.phone || latestOrder.customer_phone || null,
+          default_address: {
+            zip: addr.zip || '',
+            street: addr.street || '',
+            number: addr.number || '',
+            complement: addr.complement || '',
+            neighborhood: addr.neighborhood || '',
+            city: addr.city || '',
+            state: addr.state || addr.province || '',
+            name: addr.name || '',
+          },
+        }
+      })
+
+      setCustomers(enriched)
     } catch (error) {
       console.error('Erro ao carregar clientes:', error)
     } finally {
