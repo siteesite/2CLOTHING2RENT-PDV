@@ -41,47 +41,68 @@ export function Customers() {
 
   async function loadCustomers() {
     try {
-      const { data: customersData, error: customersError } = await supabase
-        .from('customers')
-        .select('*')
-        .order('first_name')
-      if (customersError) throw customersError
-
-      const { data: ordersData } = await supabase
+      const { data: ordersData, error: ordersError } = await supabase
         .from('orders')
-        .select('email, customer_phone, customer_cpf, billing_address, shipping_address')
+        .select('email, customer_phone, customer_cpf, billing_address, shipping_address, total_price, financial_status, created_at')
+        .order('created_at', { ascending: false })
 
-      const ordersByEmail: Record<string, any[]> = {}
+      if (ordersError) throw ordersError
+
+      const customersMap = new Map<string, any>()
+
       for (const order of ordersData || []) {
-        if (order.email) {
-          if (!ordersByEmail[order.email]) ordersByEmail[order.email] = []
-          ordersByEmail[order.email].push(order)
+        if (!order.email) continue
+
+        if (!customersMap.has(order.email)) {
+          const addr = order.shipping_address || order.billing_address || {}
+          customersMap.set(order.email, {
+            id: order.email,
+            email: order.email,
+            first_name: addr.name?.split(' ')[0] || '',
+            last_name: addr.name?.split(' ').slice(1).join(' ') || '',
+            phone: order.customer_phone || '',
+            cpf: order.customer_cpf || '',
+            default_address: {
+              zip: addr.zip || '',
+              street: addr.street || '',
+              number: addr.number || '',
+              complement: addr.complement || '',
+              neighborhood: addr.neighborhood || '',
+              city: addr.city || '',
+              state: addr.state || addr.province || '',
+              name: addr.name || '',
+            },
+            total_orders: 1,
+            total_spent: order.total_price || 0,
+          })
+        } else {
+          const existing = customersMap.get(order.email)!
+          existing.total_orders += 1
+          existing.total_spent += order.total_price || 0
+
+          if (!existing.cpf && order.customer_cpf) existing.cpf = order.customer_cpf
+          if (!existing.phone && order.customer_phone) existing.phone = order.customer_phone
+          if (!existing.first_name) {
+            const addr = order.shipping_address || order.billing_address || {}
+            existing.first_name = addr.name?.split(' ')[0] || ''
+            existing.last_name = addr.name?.split(' ').slice(1).join(' ') || ''
+            existing.default_address = {
+              zip: addr.zip || '',
+              street: addr.street || '',
+              number: addr.number || '',
+              complement: addr.complement || '',
+              neighborhood: addr.neighborhood || '',
+              city: addr.city || '',
+              state: addr.state || addr.province || '',
+              name: addr.name || '',
+            }
+          }
         }
       }
 
-      const enriched = (customersData || []).map((customer) => {
-        const orders = ordersByEmail[customer.email] || []
-        if (orders.length === 0) return customer
-
-        const latestOrder = orders[0]
-        const addr = customer.default_address?.street ? customer.default_address : (latestOrder.shipping_address || latestOrder.billing_address || {})
-
-        return {
-          ...customer,
-          cpf: customer.cpf || latestOrder.customer_cpf || null,
-          phone: customer.phone || latestOrder.customer_phone || null,
-          default_address: {
-            zip: addr.zip || '',
-            street: addr.street || '',
-            number: addr.number || '',
-            complement: addr.complement || '',
-            neighborhood: addr.neighborhood || '',
-            city: addr.city || '',
-            state: addr.state || addr.province || '',
-            name: addr.name || '',
-          },
-        }
-      })
+      const enriched = Array.from(customersMap.values()).sort((a, b) =>
+        (a.first_name || '').localeCompare(b.first_name || '')
+      )
 
       setCustomers(enriched)
     } catch (error) {
