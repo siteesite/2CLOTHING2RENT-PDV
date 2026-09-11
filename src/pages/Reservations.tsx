@@ -184,6 +184,23 @@ export function Reservations() {
 
       if (error) throw error
 
+      if (rental.paid_amount > 0) {
+        await supabase.from('rental_transactions').insert({
+          rental_id: rental.id,
+          amount: rental.paid_amount,
+          payment_method: 'pix',
+          status: 'completed',
+          transaction_type: 'refund',
+        })
+
+        if (rental.order_name) {
+          await supabase
+            .from('orders')
+            .update({ financial_status: 'refunded' })
+            .eq('order_name', rental.order_name)
+        }
+      }
+
       if (rental.product_id) {
         await supabase
           .from('products')
@@ -342,9 +359,7 @@ export function Reservations() {
                     <h3 className="font-semibold text-sm text-[var(--color-primary)] truncate">
                       {rental.product?.name || 'Produto'}
                     </h3>
-                    <span className={`text-xs font-medium px-2.5 py-1 rounded-full flex-shrink-0 ${statusColors[rental.status]}`}>
-                      {statusLabels[rental.status]}
-                    </span>
+
                   </div>
 
                   {rental.product?.brand && (
@@ -378,26 +393,26 @@ export function Reservations() {
 
                 <div className="flex items-center gap-1 flex-shrink-0">
                   {(paymentStatus === 'pending' || rental.status === 'pending' || rental.status === 'pending_payment') && (
-                    <>
-                      <button
-                        onClick={(e) => { e.stopPropagation(); openPaymentModal(rental) }}
-                        className="p-2 rounded-lg hover:bg-green-50 text-green-500 hover:text-green-700 transition-colors"
-                        title="Registrar pagamento"
-                      >
-                        <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                        </svg>
-                      </button>
-                      <button
-                        onClick={(e) => { e.stopPropagation(); setShowDeleteConfirm(rental) }}
-                        className="p-2 rounded-lg hover:bg-red-50 text-red-400 hover:text-red-600 transition-colors"
-                        title="Cancelar reserva"
-                      >
-                        <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                        </svg>
-                      </button>
-                    </>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); openPaymentModal(rental) }}
+                      className="p-2 rounded-lg hover:bg-green-50 text-green-500 hover:text-green-700 transition-colors"
+                      title="Registrar pagamento"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                    </button>
+                  )}
+                  {rental.status !== 'cancelled' && rental.status !== 'completed' && (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setShowDeleteConfirm(rental) }}
+                      className="p-2 rounded-lg hover:bg-red-50 text-red-400 hover:text-red-600 transition-colors"
+                      title="Cancelar reserva"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                      </svg>
+                    </button>
                   )}
                   <button
                     onClick={() => setSelectedRental(rental)}
@@ -591,11 +606,48 @@ export function Reservations() {
 
       {showDeleteConfirm && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl w-full max-w-sm p-6">
-            <h3 className="text-lg font-semibold text-[var(--color-primary)] mb-2">Cancelar Reserva</h3>
-            <p className="text-sm text-gray-500 mb-4">
-              Tem certeza que deseja cancelar a reserva de <strong>{showDeleteConfirm.product?.name}</strong>?
-              Essa ação não pode ser desfeita.
+          <div className="bg-white rounded-xl w-full max-w-md p-6">
+            <h3 className="text-lg font-semibold text-red-600 mb-2">Cancelar Reserva</h3>
+
+            <div className="flex items-center gap-3 mb-4 p-3 bg-gray-50 rounded-lg">
+              {showDeleteConfirm.product?.image_url ? (
+                <img src={showDeleteConfirm.product.image_url} alt="" className="w-10 h-12 rounded object-cover" />
+              ) : (
+                <div className="w-10 h-12 rounded bg-gray-200 flex items-center justify-center">👗</div>
+              )}
+              <div>
+                <p className="text-sm font-medium text-[var(--color-primary)]">{showDeleteConfirm.product?.name}</p>
+                <p className="text-xs text-gray-500">{showDeleteConfirm.start_date} → {showDeleteConfirm.end_date}</p>
+              </div>
+            </div>
+
+            <div className="space-y-3 mb-5">
+              {showDeleteConfirm.paid_amount > 0 && (
+                <div className="flex items-start gap-2 p-3 bg-amber-50 border border-amber-200 rounded-lg">
+                  <span className="text-amber-600 text-lg">💰</span>
+                  <div>
+                    <p className="text-sm font-medium text-amber-800">Valor a ser estornado</p>
+                    <p className="text-lg font-bold text-amber-700">
+                      {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(showDeleteConfirm.paid_amount)}
+                    </p>
+                    <p className="text-xs text-amber-600 mt-0.5">O pagamento será estornado automaticamente.</p>
+                  </div>
+                </div>
+              )}
+
+              <div className="flex items-start gap-2 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                <span className="text-blue-600 text-lg">📅</span>
+                <div>
+                  <p className="text-sm font-medium text-blue-800">Datas liberadas no calendário</p>
+                  <p className="text-xs text-blue-600 mt-0.5">
+                    O período de <strong>{showDeleteConfirm.start_date}</strong> a <strong>{showDeleteConfirm.end_date}</strong> ficará disponível para novas locações.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <p className="text-sm text-gray-500 mb-5">
+              Tem certeza que deseja cancelar esta reserva? Essa ação não pode ser desfeita.
             </p>
             <div className="flex gap-3">
               <button
